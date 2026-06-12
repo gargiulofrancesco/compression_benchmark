@@ -595,36 +595,45 @@ size_t decode_payload(const LoadedWire& w, const PieceDict& dict, uint8_t* dst) 
     // next token. dict arena + dst are padded by PIECE_OVERCOPY (outside the
     // timer) so the fixed read/write stays in-bounds; rare pieces > PIECE_OVERCOPY
     // take a one-off tail copy.
-    auto emit = [&](uint32_t id) {
-        const uint32_t o   = off[id];
-        const uint32_t len = off[id + 1] - o;
-        std::memcpy(dst + cum, db + o, PIECE_OVERCOPY);
-        if (__builtin_expect(len > PIECE_OVERCOPY, 0))
-            std::memcpy(dst + cum + PIECE_OVERCOPY, db + o + PIECE_OVERCOPY,
-                        len - PIECE_OVERCOPY);
-        cum += len;
-    };
+    //
+    // MACRO, not a lambda (mirrors the OnPair library's ONPAIR_EMIT_NO_OFF): a
+    // lambda shared between these loops and the for_each_token callback below got
+    // OUTLINED by GCC (one call + a memory round-trip on the cum chain per token,
+    // ~3x decode loss — exactly the hazard the note below warns about, hit through
+    // the back door). The macro guarantees inline emission with cum in a register.
+    #define BPE_EMIT(id_expr) do { \
+        const uint32_t id_  = (id_expr); \
+        const uint32_t o_   = off[id_]; \
+        const uint32_t len_ = off[id_ + 1] - o_; \
+        std::memcpy(dst + cum, db + o_, PIECE_OVERCOPY); \
+        if (__builtin_expect(len_ > PIECE_OVERCOPY, 0)) \
+            std::memcpy(dst + cum + PIECE_OVERCOPY, db + o_ + PIECE_OVERCOPY, \
+                        len_ - PIECE_OVERCOPY); \
+        cum += len_; \
+    } while (0)
 
     // FAIRNESS: BPE's bit-unpacking now matches OnPair's library speed instead of
     // riding a slow scalar reader. Byte-aligned widths take a tight typed loop with
     // the output cursor (cum) kept LOCAL (the fastest path; this is what bpe_v65536
     // → B=16 uses for the size-matched comparison vs OnPair bits=16). Sub-byte
     // widths go through the shared OnPair-equivalent batched extract16 in
-    // runners/core/bitpack.h. Both fuse with `emit` — no intermediate token array.
+    // runners/core/bitpack.h. Both fuse the emit body — no intermediate token array.
     // (Byte-aligned widths are NOT routed through the generic callback: there the
     // cursor cannot stay register-resident and the trivial per-token path loses ~3x.)
     const uint32_t B  = bitpack::bits_for_vocab(w.V);
     const uint8_t*  pk = w.packed_tokens.data();
     if (B == 16) {
         const auto* toks = reinterpret_cast<const uint16_t*>(pk);
-        for (uint32_t j = 0; j < w.T; ++j) emit(toks[j]);
+        for (uint32_t j = 0; j < w.T; ++j) BPE_EMIT(toks[j]);
         return cum;
     }
     if (B == 8) {
-        for (uint32_t j = 0; j < w.T; ++j) emit(pk[j]);
+        for (uint32_t j = 0; j < w.T; ++j) BPE_EMIT(pk[j]);
         return cum;
     }
-    bitpack::for_each_token(pk, w.packed_tokens.size(), B, w.T, emit);
+    bitpack::for_each_token(pk, w.packed_tokens.size(), B, w.T,
+                            [&](uint32_t id) { BPE_EMIT(id); });
+    #undef BPE_EMIT
     return cum;
 }
 

@@ -117,3 +117,57 @@ Single-thread fairness lock (runner rejects `threads != 1`). OOM-as-data
 
 SentencePiece v0.2.0 — Apache-2.0 (vendored `third_party/sentencepiece/`).
 minbpe — MIT (vendored `third_party/minbpe/`, test-only).
+
+## Decode codegen erratum (2026-06-12)
+
+**Symptom.** `bulk_decode` throughput for `bpe`/`bpe_v65536` was understated
+roughly 2-2.5x in every store measured before this date (including the numbers
+in the ICDE 2027 submission): 1.7-3.6 GiB/s recorded vs 4.9-7.4 GiB/s after the
+fix. The tell was a flat ~330 Mtok/s per-token rate across columns with very
+different dictionary hotness -- the signature of a fixed instruction cost per
+token, not a memory effect (OnPair varies 750-930 Mtok/s on the same columns).
+
+**Root cause.** `decode_payload`'s per-token `emit` lambda was used twice:
+written inline in the dedicated byte-aligned B==16/B==8 loops AND passed as the
+callback to `bitpack::for_each_token` (sub-byte widths). GCC kept a single
+outlined copy of the lambda and emitted a `call` per token in the dedicated
+loops too; the by-reference captures then lived in memory across iterations,
+putting a store/load round-trip plus call/ret on the loop-carried output-cursor
+chain (~12 cycles/token vs ~5 inlined). The hazard was known -- the dedicated
+loops exist precisely to avoid the generic callback path -- but the shared
+lambda re-introduced it through codegen, invisibly at the source level.
+
+**Evidence.** `objdump` of the shipped binary shows
+`call <decode_payload::{lambda}>` inside the B==16 loop. A standalone
+microbenchmark on identical synthetic data reproduces both regimes: the inlined
+kernel runs at 5.7 GiB/s, a forced-outlined call-per-token variant at 2.5 GiB/s,
+matching the recorded store values.
+
+**Fix.** `BPE_EMIT` macro (the same pattern as the OnPair library's
+`ONPAIR_EMIT_NO_OFF`) used directly in the byte-aligned loops; the lambda
+survives only as the `for_each_token` argument. Verified: no per-token call in
+the rebuilt binary; 7/7 bpe tests pass including the byte-exact round-trip.
+
+**Measured impact** (n=3, controlled environment, same protocol; `onpair`
+control cells on the same columns reproduced their stored medians within 1.6%):
+
+| column                | before (GiB/s) | after (GiB/s) | onpair (GiB/s) |
+|-----------------------|---------------:|--------------:|---------------:|
+| msmarco_queries/query |           2.19 |          4.93 |           5.03 |
+| tpch/c_comment        |           3.56 |          7.36 |           8.28 |
+| tpch/p_name           |           3.27 |          6.63 |           8.65 |
+
+**Status.** The submitted manuscript reports the pre-fix values; they were
+measured honestly under the uniform timing contract and understate a baseline,
+not the paper's system. The corrected values shrink OnPair's decode margin but
+change no ordering on the re-measured columns. The camera-ready will carry a
+full re-measurement (all six columns) with this fix in place. Only BPE
+`bulk_decode` is affected: compression ratios, compression/training times, and
+random access (`decode_row_into`, a separate hand-rolled loop) are untouched,
+and no other runner shares the pattern.
+
+**Lesson.** When a closure is both used in a hot loop and passed as a callback
+elsewhere, the compiler may outline it and silently route the hot loop through
+a call -- verify the codegen (objdump) or use a macro/template functor so the
+hot path cannot degrade. A data-independent flat per-token rate is the red flag
+that a decode loop has become instruction-bound rather than memory-bound.
