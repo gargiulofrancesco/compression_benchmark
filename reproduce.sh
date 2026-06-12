@@ -8,14 +8,14 @@
 #   build       deps + C++ build + full test suite              (~10 min)
 #   datasets    download + materialise all datasets (~25 GB)    (1-3 h, network)
 #   smoke       end-to-end functional check, synthetic data     (~5 min)
-#   headline    main grid: 6 columns x 9 baseline configs       (~12 h; BPE-64K
-#               training and Re-Pair grammar construction dominate)
-#   access      point-access latency grid (Table on access)     (~1 h)
+#   headline    main grid: 6 columns x 11 baseline configs      (~40 h; repeated
+#               BPE training dominates, Re-Pair adds ~8 h)
+#   access      point-access latency grid (Table on access)     (~3 h)
 #   ablations   budget/threshold, capacity, seeds, block size,
-#               query skew (A1-A7)                              (~8 h)
-#   modelsize   RLZ reference-size sweep (model-size figure)    (~1 h)
-#   synthetic   parametric synthetic sweep (synthetic figure)   (~1 h)
-#   scale       N-sweep 10^5..10^8 rows, OnPair vs Re-Pair      (~6 h)
+#               query skew (A1-A7)                              (~1 h)
+#   modelsize   RLZ reference-size sweep (model-size figure)    (~15 min)
+#   synthetic   parametric synthetic sweep (synthetic figure)   (~30 min)
+#   scale       N-sweep 10^5..10^8 rows, OnPair vs Re-Pair      (~1 h)
 #   paper       regenerate paper tables + figures + claims audit (~1 min)
 #
 # Environment control (required for every timing stage):

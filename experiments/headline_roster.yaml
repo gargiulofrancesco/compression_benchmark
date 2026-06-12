@@ -61,7 +61,11 @@ n_samples: 11         #.5 repetitions (median ± MAD over an ODD count →
                       # stamps min_samples into the grid; the orchestrator refuses to run
                       # a cell doc whose n_samples drops below its declared min_samples.
 mem_cap_gb: 64
-timeout_seconds: 1800 # headline columns are large; per-op cap is generous
+timeout_seconds: 999999 # effectively no per-op cap: a single BPE-64K train+encode
+                      # legitimately takes 50-60 min on the three largest columns;
+                      # that cost is a measured result, not a hang. (The scale
+                      # sweep keeps its own 2400 s cap by design: timing out there
+                      # IS the Re-Pair scalability result.)
 
 baselines:
   - { baseline: uncompressed,      runner_path: runners/uncompressed/uncompressed_runner, config_json: '{}' }

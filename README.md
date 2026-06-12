@@ -12,7 +12,7 @@ numbers.
 
 - Linux on x86-64 (the point-access latency path uses `rdtscp`).
 - GCC >= 13 (C++20), CMake >= 3.24, Python >= 3.11, `make`.
-- ~25 GB disk for datasets, ~8 GB for build + result stores.
+- ~25 GB disk for datasets, ~10 GB for build + result stores.
 - Network access for dataset download and two pinned source fetches
   (the OnPair library and its Boost.Unordered dependency); all other
   baselines are vendored under `third_party/` with pinned provenance.
@@ -32,17 +32,24 @@ committed synthetic fixture. Final line: `SMOKE OK`.
 ```sh
 ./reproduce.sh build        # deps + build + tests          (~10 min)
 ./reproduce.sh datasets     # download + materialise        (1-3 h, network)
-./reproduce.sh headline     # main results table            (~12 h)
-./reproduce.sh access       # point-access latency table    (~1 h)
-./reproduce.sh ablations    # threshold/capacity/seed/block/skew (~8 h)
-./reproduce.sh modelsize    # RLZ reference-size sweep      (~1 h)
-./reproduce.sh synthetic    # parametric synthetic sweep    (~1 h)
-./reproduce.sh scale        # N-sweep vs Re-Pair            (~6 h)
+./reproduce.sh headline     # main results table            (~40 h, see note)
+./reproduce.sh access       # point-access latency table    (~3 h)
+./reproduce.sh ablations    # threshold/capacity/seed/block/skew (~1 h)
+./reproduce.sh modelsize    # RLZ reference-size sweep      (~15 min)
+./reproduce.sh synthetic    # parametric synthetic sweep    (~30 min)
+./reproduce.sh scale        # N-sweep vs Re-Pair            (~1 h)
 ./reproduce.sh paper        # regenerate tables/figures + claims audit (~1 min)
 ```
 
 or `./reproduce.sh all`. Stages are independent once `build` and `datasets`
 have run; `paper` consumes whichever result stores exist and skips the rest.
+
+Note on the `headline` runtime: it is dominated by SentencePiece BPE
+training, repeated for each of the 11 samples per cell (a single BPE-64K
+training pass takes 35-60 minutes on the three largest columns). That cost
+is not harness overhead; it is one of the paper's measured results. Every
+other measurement stage combined takes about six hours, so a practical
+order is: `ablations`/`access`/`scale` first, `headline` overnight.
 
 ### What maps to what
 
