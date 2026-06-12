@@ -1,0 +1,8 @@
+add_library(fsst_runner_lib STATIC fsst_runner.cpp)
+target_include_directories(fsst_runner_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(fsst_runner_lib PUBLIC runner_core fsst_static)
+target_compile_features(fsst_runner_lib PUBLIC cxx_std_20)
+
+add_executable(fsst_runner main.cpp)
+target_link_libraries(fsst_runner PRIVATE fsst_runner_lib)
+target_compile_features(fsst_runner PRIVATE cxx_std_20)

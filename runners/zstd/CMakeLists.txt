@@ -1,0 +1,8 @@
+add_library(zstd_runner_lib STATIC zstd_runner.cpp)
+target_include_directories(zstd_runner_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(zstd_runner_lib PUBLIC runner_core zstd_static)
+target_compile_features(zstd_runner_lib PUBLIC cxx_std_20)
+
+add_executable(zstd_runner main.cpp)
+target_link_libraries(zstd_runner PRIVATE zstd_runner_lib)
+target_compile_features(zstd_runner PRIVATE cxx_std_20)

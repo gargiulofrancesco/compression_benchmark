@@ -1,0 +1,117 @@
+# G7 truth-table — runner name → declared PrefixSearchMode + lossless flag.
+# baseline integrations append rows here in lineup order
+# (zstd → LZ4 → FSST → repair → BPE → RLZ → OnPair). FCSD absent per the
+# skip-decision. The libCSD dictionary-encoding baselines (rpdac/pfc/rpfc) and
+# the lossy libcsd_htfc were removed as out of the high-cardinality
+# scope; `repair` (plain Re-Pair grammar) covers the in-memory Re-Pair family.
+# BigRePair dropped (out-of-core variant; regime not exercised at
+# <=1-2 GiB). See experiments/headline_roster.yaml + docs paper.2.
+#
+# is_lossless field:
+#   true   — baseline preserves arbitrary input bytes (0x00..0xFF) verbatim
+#            through compress → bulk_decode round-trip. Eligible for the
+#            headline tables T1/T2 and figures F1.
+#   false  — baseline does NOT preserve arbitrary bytes. Quarantined from
+#            headline cross-baseline tables; appendix-only. (No baseline is
+#            currently quarantined; the guard machinery is retained.)
+#
+# random_access_model field — how `random_decode(i)` reaches
+# row i, the determinant of L_ra fairness (§8.4). Declared here so the per-string
+# vs block split is machine-checkable, not just prose; the A5/A6 block-vs-flat
+# rosters derive from it.
+#   per_string  — decodes ONLY row i in O(|s_i|) from a per-row offset/phrase
+#                 index, with a resident dictionary/reference (no neighbouring
+#                 rows touched). OnPair, FSST, BPE, RLZ, and the uncompressed
+#                 floor are all per-string — so OnPair's L_ra advantage is over
+#                 the block/full-column codecs, NOT over these per-string peers.
+# As of the declaration is MEASURED, not just modelled:
+#                 ra_latency is implemented for all five per-string baselines, and
+#                 BPE/RLZ random access decodes row i's slice directly at its bit
+#                 offset (B*tok_offsets[i] / phrase_offsets[i]*total_bits), genuinely
+#                 O(|s_i|) — no longer unpacking the whole token/phrase stream.
+#   block       — must decompress the enclosing fixed-size block to read row i;
+#                 L_ra grows with block size and degrades when the hot set
+#                 scatters across blocks (A5/A6). zstd, lz4.
+#   full_column — no random-access index at all: decodes the WHOLE column and
+#                 slices row i. (No current baseline: repair moved to per_string
+# on via grammar-descent access.)
+#
+# prefix_search_mode: NativeOnCompressed is OnPair-only — it is the sole baseline
+# with a compressed-domain prefix predicate (lex-sorted dictionary + token
+# automaton, §6). Every other baseline declares DecompressThenScan and runs the
+# SHARED scanner (runners/core/decompress_then_scan + scan_prefix): none has a
+# native prefix API now that the sorted-dictionary baselines (which exposed
+# libCSD locatePrefix) are removed, so decompress-then-scan is their honest best
+# (dissolves audit W1). `uncompressed` scans the plain bytes directly.
+#
+# The single `bpe` row is SentencePiece v0.2.0 BPE driven through the GPT-2
+# byte<->unicode bijection (bytewise lossless over 0x00..0xFF; see
+# docs/benchmark/fairness/bpe.md). The former hand-rolled `bpe-byte-level-hf`
+# reimplementation and the quarantined raw-byte `bpe-sentencepiece` config were
+# consolidated into this one production-backed lossless baseline.
+baselines:
+  - name: uncompressed
+    prefix_search_mode: Uncompressed
+    is_lossless: true
+    random_access_model: per_string   # direct (offset[i], offset[i+1])
+  - name: zstd
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: block        # decode_block(enclosing block of i)
+  # zstd level twins: the {1,3,9} operating points reported in the paper.
+  # Same zstd runner binary (hello.name "zstd") via RUNNER_ALIASES;
+  # only the level config differs.
+  - name: zstd_l1
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: block        # same zstd runner (level 1)
+  - name: zstd_l9
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: block        # same zstd runner (level 9)
+  - name: lz4
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: block        # decode_block(enclosing block of i)
+  - name: fsst
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: per_string   # fsst_decompress over row i's codewords
+  # Forced-scalar FSST twin (config {"simd":false}) — AVX-512 compression path off.
+  # Same fsst runner binary (hello.name "fsst") via RUNNER_ALIASES in
+  # orchestrator/modes.py; identical ratio + decode path, differs only in T_c on
+  # AVX-512 hardware. The "FSST no-AVX" headline point (audit W3).
+  - name: fsst_scalar
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: per_string   # same fsst runner; scalar compress only
+  # libcsd_rpdac / libcsd_pfc / libcsd_rpfc (dictionary-encoding baselines) REMOVED
+  # — out of the high-cardinality scope; `repair` covers the Re-Pair family.
+  - name: repair          # plain Re-Pair grammar over the full column
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    # per_string since grammar-descent access — untimed load-time
+    # index (rule expansion lengths + top-level prefix sums), then
+    # O(log n_seq + depth + |s_i|) per query. The standard grammar-access
+    # construction; replaces the old decode-all-then-slice placeholder.
+    random_access_model: per_string
+  - name: bpe
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: per_string   # decode row i's token run (tok_offsets[i])
+  # Dictionary-size-matched twin of `bpe` (V=65536=2^16) for the equal-capacity
+  # headline comparison vs OnPair bits=16. Same bpe runner binary (hello.name
+  # "bpe") via RUNNER_ALIASES in orchestrator/modes.py; only the vocab_size config
+  # differs. Lossless by the same GPT-2 byte<->unicode bijection as `bpe`.
+  - name: bpe_v65536
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: per_string   # same bpe runner (V=2^16)
+  - name: rlz
+    prefix_search_mode: DecompressThenScan
+    is_lossless: true
+    random_access_model: per_string   # copy row i's phrases (phrase_offsets[i]) from the resident reference
+  - name: onpair
+    prefix_search_mode: NativeOnCompressed   # ONLY claimant in the lineup (FLIPPED)
+    is_lossless: true
+    random_access_model: per_string   # decompress(i) over row i's token span, O(|s_i|)

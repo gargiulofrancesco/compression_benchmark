@@ -1,0 +1,5 @@
+run_id,cell_id,baseline,op,metric_name,n_samples,median,mad,mean,ci95_lo,ci95_hi,status,prefix_search_mode,config_json,dataset,machine_id,baseline_build_flags_sha,ts_utc
+fixture,fixture-0,uncompressed,compress,compress_throughput_bytes_per_s,5,1000000000.0,5000000.0,1000000000.0,9.9e+08,1.01e+09,ok,,{},synthetic-V-D-smoke,fixture-mid,fixture-sha,2026-05-29T00:00:00+00:00
+fixture,fixture-0,uncompressed,bulk_decode,bulk_decode_throughput_bytes_per_s,5,1500000000.0,4000000.0,1500000000.0,1.49e+09,1.51e+09,ok,,{},synthetic-V-D-smoke,fixture-mid,fixture-sha,2026-05-29T00:00:00+00:00
+fixture,fixture-0,onpair,compress,compress_throughput_bytes_per_s,5,200000000.0,3000000.0,200000000.0,1.98e+08,2.02e+08,ok,,"{""bits"":16}",synthetic-V-D-smoke,fixture-mid,fixture-sha,2026-05-29T00:00:00+00:00
+fixture,fixture-0,onpair,bulk_decode,bulk_decode_throughput_bytes_per_s,5,1200000000.0,3000000.0,1200000000.0,1.19e+09,1.21e+09,ok,,"{""bits"":16}",synthetic-V-D-smoke,fixture-mid,fixture-sha,2026-05-29T00:00:00+00:00

@@ -1,0 +1,3 @@
+add_executable(uncompressed_runner main.cpp)
+target_link_libraries(uncompressed_runner PRIVATE runner_core)
+target_compile_features(uncompressed_runner PRIVATE cxx_std_20)

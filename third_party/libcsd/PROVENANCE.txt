@@ -1,0 +1,90 @@
+upstream:   https://github.com/migumar2/libCSD
+tag:        (none — no upstream release tags exist as of fetch_date)
+commit_sha: 568bf8a876684d871b97c93b4322ddf71eb830b3
+fetch_date:
+license:    LGPL-2.1
+
+scope:      Full libCSD library tree at the pinned SHA — all StringDictionary*
+            variants + supporting subdirs + bundled libcds 1.0.x.
+
+            Vendored:
+              StringDictionary.{h,cpp}
+              StringDictionary{HASHHF, HASHUFFDAC, HASHRPF, HASHRPDAC,
+                               PFC, RPFC, HTFC, HHTFC, RPHTFC,
+                               RPDAC, FMINDEX, XBW}.{h,cpp}
+              RePair/{RePair.{h,cpp}, Coder/{arrayg, basics, hash, heap,
+                       records, dictionary, IRePair, CRePair}.{h,cpp}}
+              Huffman/{huff.{h,cpp}, Huffman.{h,cpp}}  (NB: huff.cpp is C++)
+              HuTucker/HuTucker.{h,cpp}
+              utils/{VByte, LogSequence, DAC_VLS, DAC_BVLS, Utils}.{h,cpp,h}
+              utils/Coder/{BinaryNode, Coder, Codeword, DecodingTable,
+                           DecodingTableBuilder, DecodingTree, StatCoder}.{h,cpp}
+              Hash/{Hash, HashBBdh, HashBdh, HashDAC, Hashdh, HashUtils}.{h,cpp,h}
+              XBW/{TrieNode, XBW}.{h,cpp}
+              FMIndex/{SuffixArray, SSA}.{h,cpp}
+              iterators/IteratorDictID*.h, IteratorDictString*.h
+              libcds/src/utils/ + libcds/src/static/{bitsequence, coders,
+                          mapper, permutation, sequence, textindex,
+                          suffixtree}/  (bundled libcds 1.0.x; LGPL-2.1)
+
+            EXCLUDED:
+              Build.cpp, Test.cpp  (upstream CLIs; not linked)
+              upstream Makefile, README
+              libcds/{tests, docs, lib, Doxyfile, Changelog, COPYRIGHT}
+              libcds/src/static/"bitsequence (copia)"/  (upstream duplicate
+                          directory, Spanish "(copia)" suffix — verbatim
+                          copy of bitsequence/ that confuses any glob)
+              libcds/src/**/Makefile  (per-subdir header-copy makefiles —
+                          replaced by per-subdir -I paths in our CMake)
+              *.o  (pre-built object files in upstream tree)
+
+phase4_adjusted_decision_1:
+            The Phase 2 RPDAC card §"Build" said "RPDAC-relevant subset
+            of libCSD sources (RPDAC + Repair grammar + DACs + supporting
+            utilities; FMINDEX/XBW/Hash/PFC/HTFC sources excluded from
+            this archive)". This is upstream-architecturally infeasible:
+            StringDictionary.h itself includes all 11 sibling type headers
+            unconditionally at the bottom of the file, and
+            StringDictionary.cpp::load() is a switch-on-type-tag factory
+            that references every StringDictionary*::load static symbol.
+            Compiling/linking the RPDAC subset alone would fail with
+            missing-symbol errors at every sibling-type switch case.
+            We therefore vendor and link the full libCSD tree as a single
+            libcsd_static.a archive. Other baselines reuse
+            this same archive — no additional vendoring step.
+
+phase4_adjusted_decision_2:
+            huff.cpp is C++ (suffix .cpp)
+            speculated. No separate C-language target needed.
+
+license_escalation:
+            LGPL-2.1 is the FIRST non-permissive upstream in the ICDE 2027
+            benchmark lineup. Static linking is permitted under LGPL §6
+            satisfied by full-source artefact bundle distribution  + relinking capability. The runners/libcsd_rpdac/
+            rpdac_runner binary inherits this LGPL §6 obligation; the
+            orchestrator and the other runner binaries (zstd, lz4, fsst,
+            uncompressed, and other baselines
+            which also links libcsd_static.a) remain unaffected.
+
+reproducibility_caveat:
+            migumar2/libCSD has no upstream release tags (27 commits on
+            master as of fetch_date). The commit_sha above is the
+            authoritative version designator; reproducibility relies on
+            the SHA pin + the SHA256SUMS manifest below.
+
+sha256_manifest_path: third_party/libcsd/SHA256SUMS
+
+local_patches (onpair_bench, NOT upstream): — StringDictionaryHTFC.cpp::decodeHeader heap-overflow fix.
+            The decode scratch buffer was sized `4*maxlength + table->getK()`,
+            too small for a bucket of long strings over a skewed byte alphabet
+            (long Hu-Tucker codewords). On real ClickBench Title data this
+            overflowed the heap; AddressSanitizer pinned a 2656-byte write past a
+            4128-byte region in StatCoder::decodeString, surfacing as a
+            "corrupted size vs. prev_size" SIGABRT when a decode op followed
+            compress in the same process. Fixed by sizing the buffer for the true
+            worst case: bucketsize*(maxlength+1) + 4*maxlength + getK() + 16.
+            Regression: tests/pfc_htfc_htfc_overflow_test.cpp. This invalidates
+            the StringDictionaryHTFC.cpp entry in SHA256SUMS (expected).
+            NOTE: a SEPARATE, unfixed upstream libCSD HTFC decode-logic bug makes
+            some long multi-byte (e.g. Cyrillic) strings decode lossily; the
+            orchestrator's round-trip gate records those cells as status='lossy'.

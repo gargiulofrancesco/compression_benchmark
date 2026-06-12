@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dblp>
+<article key="journals/cacm/Codd70" mdate="2017-01-01">
+<author>E. F. Codd</author>
+<title>A relational model of data for large shared data banks.</title>
+<journal>Commun. ACM</journal>
+<volume>13</volume>
+<number>6</number>
+<pages>377-387</pages>
+<year>1970</year>
+</article>
+<inproceedings key="conf/sigmod/Stonebraker86" mdate="2018-02-02">
+<author>Michael Stonebraker</author>
+<author>Lawrence A. Rowe</author>
+<title>The Design of POSTGRES.</title>
+<booktitle>SIGMOD</booktitle>
+<year>1986</year>
+</inproceedings>
+<book key="books/aw/AhoSU86" mdate="2017-03-03">
+<author>Alfred V. Aho</author>
+<author>Ravi Sethi</author>
+<author>Jeffrey D. Ullman</author>
+<title>Compilers: Principles, Techniques, and Tools.</title>
+<publisher>Addison-Wesley</publisher>
+<year>1986</year>
+</book>
+</dblp>

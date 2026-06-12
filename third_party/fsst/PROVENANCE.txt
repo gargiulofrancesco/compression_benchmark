@@ -1,0 +1,32 @@
+upstream:   https://github.com/cwida/fsst
+tag:        (none — no upstream release tags exist as of fetch_date)
+commit_sha: e638d4cf8c26129d73c242a4127b42b975de5b63
+fetch_date:
+license:    MIT
+scope:      library files only — fsst.h, libfsst.hpp, libfsst.cpp, fsst_avx512.cpp
+            CLI (upstream fsst.cpp w/ int main) EXCLUDED — not linked, not vendored
+            fsst12/ variant EXCLUDED — fsst12.h, libfsst12.hpp, libfsst12.cpp
+            tests/, examples/, paper/, doc/, README, Makefile EXCLUDED
+            fsst_duplicate (MT API) NEVER called from runners/fsst/ — single-thread fairness
+            fsst_avx512.cpp vendored because libfsst.cpp references fsst_compressAVX512 /
+              fsst_hasAVX512 unconditionally inside namespace libfsst {}. The AVX-512
+              intrinsics inside fsst_avx512.cpp are gated by `__AVX512F__`; on M1/ARM the
+              file compiles to the scalar no-op fallback and fsst_hasAVX512() returns
+              false, so libfsst.cpp's runtime gate `if (simd && fsst_hasAVX512())` takes
+              the scalar path. cpp + libfsst.cpp" file list
+              was incomplete; this PROVENANCE captures the actual library file set.
+local_patches:
+            fsst_avx512.cpp (local patch): fsst_hasAVX512()
+              now returns false when the environment variable FSST_DISABLE_AVX512 is
+              set, on top of the upstream CPUID check. This lets the FSST runner force
+              the scalar compression path on AVX-512 hardware (config {"simd":false},
+              roster baseline `fsst_scalar`) so the "FSST with/without AVX-512" headline
+              points are measured on the SAME machine — isolating AVX-512's effect to
+              compression throughput, the only thing it accelerates (the decoder is
+              scalar regardless). Upstream behaviour is unchanged when the env var is
+              unset. SHA256SUMS below reflects the patched file.
+reproducibility_caveat:
+            cwida/fsst has no upstream release tags. The commit_sha above
+            is the authoritative version designator; reproducibility relies
+            on the SHA pin + the SHA256SUMS manifest below.
+sha256_manifest_path: third_party/fsst/SHA256SUMS

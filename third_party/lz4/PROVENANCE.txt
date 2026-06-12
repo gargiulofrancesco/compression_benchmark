@@ -1,0 +1,10 @@
+upstream:   https://github.com/lz4/lz4
+tag:        v1.10.0
+commit_sha: ebb370ca83af193212df4dcbadcc5d87bc0de2f0
+fetch_date:
+license:    BSD-2-Clause (lib/ subset only)
+scope:      lib/ subset only — lz4.{h,c}, lz4hc.{h,c}, lz4file.{h,c}, lz4frame.{h,c}, lz4frame_static.h, xxhash.{h,c}
+            programs/ (GPLv2 CLI) EXCLUDED — never linked into the measurement path
+            MT excluded (no MT in lib/; MT lives only in programs/lz4.c upstream)
+            LZ4F (lz4frame.c) linked into liblz4_static.a but UNUSED in the headline path per tests/, examples/, doc/, ossfuzz/, contrib/, dll/ EXCLUDED
+sha256_manifest_path: third_party/lz4/SHA256SUMS

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Versioned pre-commit guard against accidentally committing the heavy artifacts
+# that make this working tree ~1.3 GB (build/, .venv/) or the multi-GB real
+# datasets (datasets/). These are all in .gitignore; this hook is the BACKSTOP
+# for when .gitignore is bypassed (`git add -f`, a stray new path, a fresh clone
+# with a different ignore, etc.).
+#
+# Install with:  make install-hooks   (sets core.hooksPath=tools/git-hooks)
+# Bypass (NOT recommended): git commit --no-verify
+#
+# Tunable: ONPAIR_MAX_BLOB_BYTES (default 10 MiB). The largest legitimately
+# tracked file is third_party/sentencepiece/.../normalization_rule.h (~6.9 MB),
+# so 10 MiB clears the vendored sources while still catching real accidents.
+set -euo pipefail
+
+MAX_BYTES="${ONPAIR_MAX_BLOB_BYTES:-10485760}"   # 10 MiB
+# Heavy/generated top-level paths that must never be committed.
+BLOCKED='^(build/|\.venv/|datasets/)'
+
+fail=0
+while IFS= read -r -d '' f; do
+    if printf '%s' "$f" | grep -Eq "$BLOCKED"; then
+        echo "pre-commit BLOCKED: '$f' is under a generated/heavy path (build/, .venv/, datasets/) — do not commit it." >&2
+        fail=1
+        continue
+    fi
+    if [ -f "$f" ]; then
+        sz=$(wc -c < "$f" | tr -d ' ')
+        if [ "$sz" -gt "$MAX_BYTES" ]; then
+            echo "pre-commit BLOCKED: '$f' is $((sz / 1048576)) MiB (> $((MAX_BYTES / 1048576)) MiB). Keep large binaries/data out of git (use Git LFS or an external store)." >&2
+            fail=1
+        fi
+    fi
+done < <(git diff --cached --name-only -z --diff-filter=ACM)
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-commit: commit aborted. Fix the above (e.g. \`git restore --staged <path>\`), or override with \`git commit --no-verify\` if you are certain." >&2
+    exit 1
+fi
+exit 0

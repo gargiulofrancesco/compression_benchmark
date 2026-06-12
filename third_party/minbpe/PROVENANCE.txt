@@ -1,0 +1,61 @@
+third_party/minbpe — PROVENANCE
+================================
+
+upstream_url:       https://github.com/karpathy/minbpe
+upstream_head_sha:  1acefe89412b20245db5a22d2a02001e547dc602
+fetch_date:
+fetched_by:         git clone --depth=1 + rsync -a (exclusions below)
+
+license:            MIT (Karpathy, 2024; SPDX-Identifier: MIT;
+                    third_party/minbpe/LICENSE)
+
+phase:              4 (baseline-7) — BPE baseline consolidation;
+                    test-only independent round-trip cross-check role.
+fairness_notes:     docs/benchmark/fairness/bpe.md
+
+role
+----
+minbpe is a test-only **independent round-trip cross-check** for the `bpe`
+baseline (SentencePiece BPE via the GPT-2 byte<->unicode bijection). It is NOT
+a baseline, NOT on any measurement path, and NOT a bit-identical-token oracle:
+SentencePiece's vocab and tie-breaks legitimately differ from minbpe's. Use:
+  - Defence-in-depth at test time: drive minbpe (raw-byte BPE, no byte<->unicode
+    mapping) and the `bpe` runner on the same tiny slice and assert BOTH
+    round-trip to the exact input bytes. Because minbpe reaches those bytes by a
+    completely independent code path, a divergence flags a harness/mapping bug a
+    SentencePiece self-round-trip could miss. ONLY bytewise round-trip
+    equivalence is asserted (not token identity). Test lives at
+    tests/test_bpe_minbpe_crosscheck.py.
+  - NOT linked into the runner binary .
+  - Invoked from the orchestrator test path only (Python; via subprocess).
+
+scope
+-----
+Full vendored tree, minus:
+  - .git/         (no in-tree git history)
+  - tests/        (minbpe upstream tests; not needed)
+  - lecture.md    (educational markdown; not needed)
+
+NOT used:
+  - basic.py     → reference for the byte-level BPE algorithm (no regex
+                    split, no special tokens). USED by the cross-check.
+  - regex.py     → adds GPT-style regex pretokeniser; OUT OF SCOPE
+                    (bytewise-correctness is the goal).
+  - gpt4.py      → loads OpenAI GPT-4 tokenizer; OUT OF SCOPE.
+  - train.py     → CLI driver; not invoked.
+
+phase_0_compliance
+------------------
+- No git submodules : minbpe is a flat in-tree snapshot.
+- No download-at-install: vendored at integration time.
+- C++20 measurement language preserved: minbpe is Python; runs at test
+  time only, not at measurement time.
+- region (mirroring minbpe is an offline test-only cross-check.
+
+reproducibility_caveat
+----------------------
+No upstream release tags. SHA pin is the reproducibility anchor.
+
+bundled_snapshots
+-----------------
+None. minbpe is pure Python with no transitive C dependencies.

@@ -1,0 +1,30 @@
+fixed_thresholds:
+- 2
+- 3
+- 5
+- 8
+- 12
+- 20
+- 32
+- 50
+bits: 16
+seed: 42
+mem_cap_gb: 64
+columns:
+- dataset: dbpedia
+  column: abstract
+- dataset: msmarco_urls
+  column: url
+- dataset: msmarco_queries
+  column: query
+- dataset: amazon
+  column: titles
+- dataset: tpch
+  column: p_name
+- dataset: tpch
+  column: c_comment
+smoke:
+  fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col
+  fixed_threshold: 10
+  dataset: synthetic_vd_smoke_fixture
+  column: L32_sigma16_rho0.7

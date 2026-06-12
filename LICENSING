@@ -1,0 +1,44 @@
+Licence inheritance for the benchmark runner binaries
+======================================================
+
+The benchmark consists of a Python orchestrator plus one runner binary per
+baseline. Each binary inherits the licences of its statically linked
+dependencies. Per-upstream details (URL, pinned SHA/tag, vendored scope) are
+in third_party/<dep>/PROVENANCE.txt and, for the OnPair library, in
+external/onpair_cpp.cmake.
+
+Permissive-only binaries
+------------------------
+  uncompressed_runner   (no third-party deps)
+  onpair_runner         OnPair library (MIT, via FetchContent pin)
+  fsst_runner           FSST (MIT)
+  lz4_runner            LZ4 lib/ subset (BSD-2-Clause)
+  zstd_runner           Zstandard (BSD-3-Clause arm of the dual licence)
+  rlz_runner            libdivsufsort (MIT); RLZ algorithm implemented
+                        in-repo (runners/rlz/rlz_core.{h,cpp})
+  bpe_runner            SentencePiece v0.2.0 (Apache-2.0) with its bundled
+                        permissive snapshots (absl Apache-2.0, protobuf-lite
+                        BSD-3-Clause-Google, darts_clone BSD-2-Clause,
+                        esaxx MIT)
+
+repair_runner — LGPL-2.1
+------------------------
+Statically links libCSD (LGPL-2.1, Martinez-Prieto et al.), including its
+bundled libcds 1.0.x (LGPL-2.1). LGPL obligations are satisfied by full
+source distribution of this repository: the complete library source and the
+build system needed to relink are included under third_party/libcsd/.
+
+Test-only dependencies (not linked into any measured binary)
+------------------------------------------------------------
+  minbpe (MIT) — secondary round-trip cross-check in the BPE tests.
+
+Dataset licences (registry cross-referenced by experiments/datasets.yaml)
+-------------------------------------------------------------------------
+  TPC-academic                  TPC-H data generated locally via DuckDB's
+                                tpch extension (TPC EULA, academic use)
+  ODC-BY                        DBLP XML dump
+  CC-BY-SA-4.0                  DBpedia short abstracts
+  MS-MARCO-non-commercial       MS MARCO URLs and query logs
+  amazon-reviews-2023-research  Amazon Reviews 2023 (McAuley Lab, UCSD),
+                                Books category metadata; research use
+  n/a                           synthetic generator (no external data)

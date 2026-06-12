@@ -1,0 +1,94 @@
+diff --git a/include/onpair/core/dictionary.h b/include/onpair/core/dictionary.h
+index 1c135bb..2e67cc0 100644
+--- a/include/onpair/core/dictionary.h
++++ b/include/onpair/core/dictionary.h
+@@ -46,16 +46,32 @@ struct Dictionary {
+ 
+     size_t num_tokens() const noexcept { return offsets.empty() ? 0 : offsets.size() - 1; }
+ 
+-    // Returns the logical dictionary size (true token bytes + offsets array).
++    // Separated dictionary-space sub-counters. Consumers that need to choose
++    // what to include in a space/ratio accounting should use these directly
++    // rather than the lumped bytes_used() (which is exactly their sum). These
++    // are the DICTIONARY's own bytes (the trained model); they are unrelated to
++    // the per-row STRING offsets a column carries separately.
++    //
++    //   token_content_bytes() — the concatenated token byte sequences (the
++    //                           actual dictionary content). offsets.back(),
++    //                           unaffected by decoder padding.
++    //   offset_bytes()        — the dictionary's own offset array
++    //                           (num_tokens()+1 entries × 4 bytes). These index
++    //                           the dictionary content and ARE part of the model.
++    size_t token_content_bytes() const noexcept {
++        return offsets.empty() ? 0 : offsets.back();
++    }
++    size_t offset_bytes() const noexcept {
++        // TODO(upstream): offsets is always u32; a variant could use u16 for
++        // dictionaries with <=2^12 tokens. Accounting reflects the u32 layout.
++        return offsets.size() * sizeof(uint32_t);
++    }
++
++    // Logical dictionary size = token content + dictionary offsets. Unchanged
++    // semantics; now expressed as the sum of the separated sub-counters above.
+     // Uses offsets.back() — not bytes.size() — so it is unaffected by padding.
+     size_t bytes_used() const noexcept {
+-        const size_t true_bytes = offsets.empty() ? 0 : offsets.back();
+-        // Dictionaries with ≤2^12 tokens span at most 256×1 + 3840×16 = 61696
+-        // bytes (256 single-byte tokens are always present), so u16 offsets
+-        // suffice; larger dictionaries require u32.
+-        // TODO: offsets is always u32 — make it a variant to exploit this.
+-        const size_t offsets_bytes = offsets.size() * sizeof(uint32_t);
+-        return true_bytes + offsets_bytes;
++        return token_content_bytes() + offset_bytes();
+     }
+ 
+     // Append (MAX_TOKEN_SIZE - last_token_len) zero bytes so the decoder can
+diff --git a/include/onpair/core/dictionary_view.h b/include/onpair/core/dictionary_view.h
+index 72b6538..1b1e962 100644
+--- a/include/onpair/core/dictionary_view.h
++++ b/include/onpair/core/dictionary_view.h
+@@ -42,6 +42,12 @@ public:
+         return dict_.bytes_used();
+     }
+ 
++    // Separated dictionary-space sub-counters (sum == bytes_used()). Let the
++    // consumer decide what to include in a space/ratio accounting. See
++    // Dictionary::{token_content_bytes,offset_bytes} for semantics.
++    size_t token_content_bytes() const noexcept { return dict_.token_content_bytes(); }
++    size_t offset_bytes()        const noexcept { return dict_.offset_bytes(); }
++
+     // Returns the [lo, hi] token-id range whose byte sequences share `prefix`.
+     TokenRange prefix_range(
+         const uint8_t* prefix, size_t prefix_len) const noexcept;
+diff --git a/include/onpair/encoding/training/trainer.h b/include/onpair/encoding/training/trainer.h
+index c5edcda..c57d3b0 100644
+--- a/include/onpair/encoding/training/trainer.h
++++ b/include/onpair/encoding/training/trainer.h
+@@ -28,6 +28,7 @@ namespace onpair::encoding {
+ struct TrainResult {
+     Dictionary             dict;  /// tokens in lexicographic order
+     LongestPrefixMatcher   lpm;   /// maps byte sequences → sorted token IDs
++    uint64_t sample_bytes_consumed = 0;  /// onpair_bench dev shim (rig, not upstream)
+ };
+ 
+ /// Train a dictionary from raw input and return it in sorted order.
+diff --git a/src/onpair/encoding/training/trainer.cpp b/src/onpair/encoding/training/trainer.cpp
+index 53e5b3c..6eb6f7e 100644
+--- a/src/onpair/encoding/training/trainer.cpp
++++ b/src/onpair/encoding/training/trainer.cpp
+@@ -136,6 +136,7 @@ TrainResult train(const uint8_t* data,
+         Token  prev_id  = first.first;
+         size_t prev_len = first.second;
+         size_t pos      = prev_len;
++        result.sample_bytes_consumed += prev_len;
+ 
+         if (dyn) {
+             dyn->on_bytes_scanned(prev_len);
+@@ -147,6 +148,7 @@ TrainResult train(const uint8_t* data,
+             auto m = result.lpm.find_longest_match(str + pos, len - pos);
+             const Token  curr_id  = m.first;
+             const size_t curr_len = m.second;
++            result.sample_bytes_consumed += curr_len;
+ 
+             if (dyn) {
+                 dyn->on_bytes_scanned(curr_len);

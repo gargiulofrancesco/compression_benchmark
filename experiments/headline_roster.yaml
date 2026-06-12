@@ -1,0 +1,99 @@
+# — headline benchmark roster (§8.2 / F1 / T1 / T2).
+#
+# One canonical config per baseline for the headline cross-baseline comparison.
+# The headline grid = (every real column in datasets.yaml) × (every baseline
+# here). Generated into build/headline_cells.yaml by experiments/gen_headline_cells.py
+# and driven through the canonical orchestrator (orchestrator.orchestrate), so
+# every headline cell gets the same G6 + round-trip correctness verification the
+# smoke run uses.
+#
+# ROSTER = the 10 lossless COMPRESS-AS-IS baselines (is_lossless: true in
+# baseline_modes.yaml):
+# uncompressed + zstd + lz4 + fsst + fsst_scalar + repair + bpe + bpe_v65536 + rlz + onpair.
+#
+# DICTIONARY-ENCODING BASELINES REMOVED FROM THE HEADLINE (
+# ). libcsd_rpdac (Re-Pair+DAC), libcsd_pfc (front coding), and
+# libcsd_rpfc (Re-Pair Front Coding) are sorted-dictionary methods: they dedup +
+# lex-sort the column and store per-row id codes. That is the DICTIONARY-ENCODING
+# regime (Parquet/ClickHouse-LowCardinality/Arrow), which this paper explicitly
+# scopes OUT. Two consequences:
+#   (1) The Re-Pair / grammar family is STILL represented — by `repair` (plain
+#       full-column Re-Pair, the honest compress-as-is grammar point; V-B/AV3 intact).
+#   (2) With the dict baselines gone, every headline baseline stores a genuine
+#       per-row offset array β, so excluding offsets from R/T is now provably
+#       SYMMETRIC and fair (dissolves audit findings B1 + W6). See §12.6.
+# The rpdac/pfc/rpfc RUNNERS were REMOVED ENTIRELY: runner dirs,
+# third_party/libcsd, their C++/py tests, and baseline_modes rows all deleted. The
+# B2 dictionary-encoding exclusion is now motivated in prose (§2.3), not an
+# empirical scope-fence figure. `repair` covers the Re-Pair family.
+# (BigRePair dropped it is Re-Pair via Prefix-Free
+# Parsing, an OUT-OF-CORE variant for inputs too large for in-memory Re-Pair; at
+# this benchmark's <=1-2 GiB columns its regime is never exercised, libcsd_rpdac
+# already represents in-memory Re-Pair, and its fork+exec subprocess+disk pipeline
+# is not comparable to the in-process codecs. See docs paper.2.)
+# The single `bpe` row is SentencePiece BPE via
+# the GPT-2 byte<->unicode bijection (bytewise lossless; docs/benchmark/fairness/
+# bpe.md). The headline cross-baseline tables still call
+# orchestrator.modes.assert_lossless_only before any aggregation (guard retained).
+#
+# CANONICAL CONFIGS (plan defaults; "use plan defaults"
+#). Where a baseline has a headline sweep elsewhere, the headline row
+# uses the documented canonical point and the sweep lives in its ablation:
+#   - zstd  level 3 (the "smoke-zstd-L3" headline level); 1 MiB block budget.
+#   - lz4   fast/accel=1; 1 MiB block budget.
+#   - rlz   R%=5% (canonical middle of {1,5,25}); block_size 16384.
+#   - bpe   TWO size-matched configs against OnPair's dictionary capacity 2^bits:
+#           * bpe (V=16384=2^14) — canonical middle; the Cluster-B pairing with
+#             OnPair bits=14 (2^14). sample_fraction=0.15 (OnPair parity).
+#           * bpe_v65536 (V=65536=2^16) — DICTIONARY-SIZE-MATCHED to the OnPair
+#             headline (bits=16 => capacity 2^16=65536), so the headline bpe↔onpair
+#             row is an apples-to-apples equal-dictionary-size comparison
+#. Same bpe runner binary (hello.name
+#             "bpe") via the RUNNER_ALIASES variant-multiplex in orchestrator/modes.py.
+#           The full V sweep stays in the appendix.
+# - onpair  bits=16 (headline default), sample_fraction=0.15. The
+#             bit-width sweep is A2; the sample_fraction sweep is A3.
+# mem_cap_gb = 64 and seed = 42 are the headline defaults across all baselines.
+
+n_samples: 11         #.5 repetitions (median ± MAD over an ODD count →
+                      # the median is an observed measurement, not an interpolation).
+                      # ENFORCED: gen_headline_cells asserts >= HEADLINE_MIN_SAMPLES and
+                      # stamps min_samples into the grid; the orchestrator refuses to run
+                      # a cell doc whose n_samples drops below its declared min_samples.
+mem_cap_gb: 64
+timeout_seconds: 1800 # headline columns are large; per-op cap is generous
+
+baselines:
+  - { baseline: uncompressed,      runner_path: runners/uncompressed/uncompressed_runner, config_json: '{}' }
+  - { baseline: zstd,              runner_path: runners/zstd/zstd_runner,                  config_json: '{"level":3,"block_budget_bytes":1048576}' }
+  # zstd level twins: the {1,3,9} operating points reported in the paper.
+  # Same zstd runner binary via RUNNER_ALIASES in orchestrator/modes.py.
+  - { baseline: zstd_l1,           runner_path: runners/zstd/zstd_runner,                  config_json: '{"level":1,"block_budget_bytes":1048576}' }
+  - { baseline: zstd_l9,           runner_path: runners/zstd/zstd_runner,                  config_json: '{"level":9,"block_budget_bytes":1048576}' }
+  - { baseline: lz4,               runner_path: runners/lz4/lz4_runner,                    config_json: '{"tier":"fast","accel":1,"block_budget_bytes":1048576}' }
+  - { baseline: fsst,              runner_path: runners/fsst/fsst_runner,                  config_json: '{"variant":"fsst","training":"full_column"}' }
+  # fsst_scalar DROPPED from the ICDE headline grid: the measurement
+  # box (Arrow Lake, AVX2-only) has no AVX-512, so `fsst` and `fsst_scalar` are
+  # bit-identical configs here — a duplicate row, not an isolation point. The
+  # AVX-512 encoder effect is handled in §8.1 prose (it accelerates FSST
+  # *compression* only; ratio/decode/RA are unaffected — and FSST's decoder is
+  # scalar by design). Alias + modes entries retained for a future AVX-512 re-run.
+  # dictionary-encoding baselines (libcsd_rpdac / libcsd_pfc / libcsd_rpfc) REMOVED
+  # from the headline — see header note + scope_and_roster_decisions.md.
+  # Runners retained for the scope-fence figure only.
+  - { baseline: repair,            runner_path: runners/repair/repair_runner,              config_json: '{"mem_cap_gb":64}' }
+  - { baseline: bpe,               runner_path: runners/bpe/bpe_runner,                    config_json: '{"vocab_size":16384,"sample_fraction":0.15,"threads":1,"mem_cap_gb":64}' }
+  - { baseline: bpe_v65536,        runner_path: runners/bpe/bpe_runner,                    config_json: '{"vocab_size":65536,"sample_fraction":0.15,"threads":1,"mem_cap_gb":64}' }
+  - { baseline: rlz,               runner_path: runners/rlz/rlz_runner,                    config_json: '{"reference_size_fraction":0.05,"block_size":16384,"seed":42,"threads":1,"mem_cap_gb":64}' }
+  - { baseline: onpair,            runner_path: runners/onpair/onpair_runner,              config_json: '{"bits":16,"sample_fraction":0.15,"seed":42,"threads":1,"mem_cap_gb":64}' }
+
+# Smoke subset: a fast, lossless, training-cheap trio driven against the committed
+# V-D 1000-row fixture (dataset_kind=real → exercises the real copy-from-disk path;
+# 1000 rows ≥ the orchestrator's random_decode idx=42 probe). Avoids the heavy
+# training baselines (bpe/rlz) to stay under the smoke wall budget.
+smoke:
+  fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col
+  dataset: synthetic_vd_smoke_fixture
+  column:  L32_sigma16_rho0.7
+  n_samples: 2
+  baselines: [uncompressed, zstd, onpair]

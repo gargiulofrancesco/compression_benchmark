@@ -1,0 +1,102 @@
+# smoke manifest. Cells: Uncompressed (§8.10 floor, ),
+# zstd L3 (-1), lz4 fast/accel=1 (-2), fsst (-3),
+# libCSD RPDAC (-4), libCSD PFC (-5a), (HTFC dropped),
+# (BigRePair dropped), bpe V=16K (-7; the single canonical
+# BPE row = SentencePiece BPE via the GPT-2 byte<->unicode bijection,
+# is_lossless: true; docs/benchmark/fairness/bpe.md),
+# RLZ R%=5% (pure C++ + libdivsufsort), and OnPair bits=16 + bits=14
+# (consumed via FetchContent + SHA pin; the only NativeOnCompressed
+# claimant; bits=14 is the size-matched ablation paired with bpe V=2^14).
+# Multi-cell structural coverage (BPE V={4K, 64K, 256K}; RLZ R% ∈ {1%, 25%};
+# OnPair bits ∈ {12, 14, 16} for §8.6 disjointness) lives in C++ ctest.
+# Total wall budget ≤ 5 minutes.
+n_samples: 2     # reduced from 5 to keep smoke wall budget reasonable
+                 # under bpe (trains on a sample). Statistical robustness
+                 # (n=5) restored at measurement time.
+mem_cap_gb: 4
+timeout_seconds: 60
+cells:
+  - cell_id: smoke-0
+    baseline: uncompressed
+    runner_path: runners/uncompressed/uncompressed_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: "{}"
+  - cell_id: smoke-zstd-L3
+    baseline: zstd
+    runner_path: runners/zstd/zstd_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"level":3,"block_budget_bytes":1048576}'
+  - cell_id: smoke-lz4-fast
+    baseline: lz4
+    runner_path: runners/lz4/lz4_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"tier":"fast","accel":1,"block_budget_bytes":1048576}'
+  - cell_id: smoke-fsst
+    baseline: fsst
+    runner_path: runners/fsst/fsst_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"variant":"fsst","training":"full_column"}'
+  # smoke-libcsd-rpdac / smoke-libcsd-pfc removed (dict baselines dropped).
+  # Single canonical BPE row (SentencePiece BPE via the GPT-2 byte<->unicode
+  # bijection; is_lossless: true). Only the V=16K cell is smoke-tested (canonical
+  # middle vocab; cheapest representative); V={4K,64K,256K} are exercised in C++
+  # ctest (bpe_vocab_disjointness_test + bpe_bit_width_test).
+  # sample_fraction=0.15 keeps training cheap (OnPair parity).
+  - cell_id: smoke-bpe-V16K
+    baseline: bpe
+    runner_path: runners/bpe/bpe_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"vocab_size":16384,"sample_fraction":0.15,"normalization":"identity","threads":1,"mem_cap_gb":64}'
+  # RLZ. Single canonical middle R%=5% smoke cell;
+  # multi-R% structural coverage (R% ∈ {1%, 25%}) in C++ ctest via
+  # rlz_reference_size_disjointness_test. Refused-env path exercised in
+  # tests, not smoke (smoke column at 1.27 MB has K=4 at R%=5%; sampling
+  # succeeds). adjusted-decision pure C++
+  # reimpl + libdivsufsort only (voided).
+  - cell_id: smoke-rlz-R5
+    baseline: rlz
+    runner_path: runners/rlz/rlz_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"reference_size_fraction":0.05,"block_size":16384,"seed":42,"threads":1,"mem_cap_gb":64}'
+  # OnPair (last; closes ). Two cells per:
+  # smoke-onpair-bits16 — canonical headline (library default).
+  # smoke-onpair-bits14 — size-matched ablation (BPE V=16K=2^14 pairing).
+  # Multi-bits ratio coverage (bits in {12, 14, 16}) handled in C++ ctest
+  # via onpair_bit_width_disjointness_test + onpair_bit_tight_identity_test.
+  # OnPair is the only NativeOnCompressed claimant — G6 + §8.10 reviewer-
+  # disclosure surface exercise via onpair_native_prefix_search_test +
+  # test_onpair_native_prefix_search_smoke.py.
+  - cell_id: smoke-onpair-bits16
+    baseline: onpair
+    runner_path: runners/onpair/onpair_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"bits":16,"sample_fraction":0.15,"seed":42,"threads":1,"mem_cap_gb":64}'
+  - cell_id: smoke-onpair-bits14
+    baseline: onpair
+    runner_path: runners/onpair/onpair_runner
+    dataset: synthetic-V-D-smoke
+    n_rows: 10000
+    mean_len: 128
+    seed: 42
+    config_json: '{"bits":14,"sample_fraction":0.15,"seed":42,"threads":1,"mem_cap_gb":64}'

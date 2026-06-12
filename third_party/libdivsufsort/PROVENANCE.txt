@@ -1,0 +1,35 @@
+upstream:          https://github.com/y-256/libdivsufsort
+tag:               2.0.1
+head_sha:          82b01f764e342f1858d4473c17b56844aac9c12d
+license:           MIT (expat-form; see COPYING)
+spdx-id:           MIT
+canonical citation: Yuta Mori, "libdivsufsort: A lightweight suffix sorting library", 2003-2008.
+
+scope vendored:
+  full tree at tag 2.0.1, minus .git/.
+
+build configuration (CMake shim at third_party/libdivsufsort/CMakeLists.txt
+forces these options on top of upstream's CMakeLists.txt):
+  - BUILD_DIVSUFSORT64 = OFF   (32-bit suffix array only; the RLZ reference
+                                never exceeds 1 GB on any evaluated column,
+                                so 32-bit indices suffice)
+  - BUILD_SHARED_LIBS  = OFF
+Used by runners/rlz/rlz_core.cpp inside the compress timed region.
+
+Why the RLZ baseline is a reimplementation rather than a vendored upstream:
+the canonical academic implementation (skuruppu/RLZ, GPL-3.0, HEAD
+0e168d9900ac7d357a44d622834d1cac7d4a1d40) is structurally unsuitable for an
+in-process harness:
+  (a) no in-process API — RLZCompress() takes argv-style filename arrays and
+      reads/writes files on disk inside the constructor;
+  (b) output is a custom on-disk binary format, so capturing it would mean
+      reparsing its bit-encoder state;
+  (c) it requires vendoring libcds 1.0.8 (GPL-3.0-or-later), adding a large
+      transitive GPL surface.
+The harness therefore ships a compact C++ implementation of the
+Hoobin/Puglisi/Zobel (VLDB 2011) algorithm — greedy LZ77 factor parse
+against a uniformly sampled reference, suffix-array longest-match lookup —
+in runners/rlz/rlz_core.{h,cpp} (~200 lines), with libdivsufsort 2.0.1 as
+its sole external dependency. The reference is sampled with a fixed seed
+(std::mt19937, seed=42), matching the published method. Rationale and
+configuration details: docs/benchmark/fairness/rlz.md.

@@ -1,0 +1,20 @@
+upstream:    https://github.com/facebook/zstd
+tag:         v1.5.6
+commit_sha:  794ea1b0afca0f020f4e57b6732332231fb23c70
+release:     2024-03-30
+fetch_date:
+license:     BSD-3-Clause OR GPL-2.0-only (dual; see LICENSE)
+scope:       lib/ subset only — lib/common/ + lib/compress/ + lib/decompress/
+             plus the two public headers (zstd.h, zstd_errors.h).
+exclusions:  - upstream programs/, tests/, doc/, examples/, contrib/, build/
+             - lib/dictBuilder/ + lib/zdict.h (trained-dictionary builder) — REMOVED: zstd runs streaming-only (no ZDICT cell); was dead code
+             - lib/deprecated/, lib/legacy/, lib/dll/
+             - lib/compress/zstdmt_compress.c  (single-thread fairness)
+             - upstream's lib/Makefile, lib/BUCK, lib/libzstd.mk, lib/libzstd.pc.in,
+               lib/module.modulemap, lib/README.md (build glue not consumed by our CMake)
+sha256_manifest: SHA256SUMS (one sha256/path per line; alphabetical; sha256sum-compatible)
+build_target: zstd_static (static archive libzstd_static.a) — built via this directory's CMakeLists.txt
+defines:     ZSTD_MULTITHREAD=0   (no MT codepath linked)
+             ZSTD_LEGACY_SUPPORT=0
+             HUF_DISABLE_ASM=1    (on non-x86_64 hosts only; x86_64 hosts assemble huf_decompress_amd64.S)
+consumed_by: runners/zstd/zstd_runner — streaming only.

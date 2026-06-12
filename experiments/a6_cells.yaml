@@ -1,0 +1,58 @@
+# step 7 — A6 ablation grid (query-distribution sweep vs random-access
+# latency). Plan §12.7 row A6: query distribution ∈ {uniform, Zipf(1.0),
+# Zipf(1.5), Beta(2,5), Poisson(N/2)}, x = dist, y = L_ra p50/p95/p99, datasets =
+# MS MARCO URL + TPC-H c_comment, cache = cold + warm, RQ4 / V-I, V-J.
+#
+# Reuses the A5 `ra_latency` op (runners/core/query_sampler.h + latency_stats.h);
+# block size is NOT swept (fixed at the headline 1 MB budget) — only the query
+# distribution + layout vary. See schema/a6_results.sql for the full design note.
+#
+# ROSTER: A5's roster + one per-string-native
+# baseline besides OnPair (fsst), for fairness — show that skew-insensitivity is
+# a per-string-class property, not an OnPair-specific claim.
+#   block-based : zstd, lz4   (L_ra degrades when the hot set scatters)
+#   per-string  : fsst, onpair (flat under skew)
+#
+# LAYOUT BRACKET: each skewed distribution runs
+# under BOTH identity (hot set contiguous; block baselines' best case) and
+# scramble (hot set scattered; YCSB-realistic worst case). Uniform is
+# layout-invariant → identity only.
+#
+# Grid: 4 baselines × 2 datasets × 2 cache states × [uniform@identity (1) +
+#       4 skewed × 2 layouts (8)] = 4 × 2 × 2 × 9 = 144 cells.
+# Real-data only (requires `make datasets`); runs on a measurement rig via
+# `make a6`. NOT part of `make smoke`.
+
+distributions:      [uniform, zipf1.0, zipf1.5, beta2_5, poisson_n2]
+layouts:            [identity, scramble]   # skewed dists; uniform → identity only
+baselines:          [zstd, lz4, fsst, onpair]
+block_budget_bytes: 1048576                # headline 1 MB; FIXED (block size not swept)
+cache_states:       [warm, cold]
+n_samples:          20000   # 1e6 -> 2e4 (see a5_cells.yaml note)
+seed:               42
+
+# Fallback if the rig wall-time budget is exceeded: drop to the 3 most-informative
+# distributions, KEEPING the layout bracket + the per-string baseline (both are
+# load-bearing for fairness — the extra distributions are not). Surfaced for the
+# rig operator; the driver does not auto-apply it.
+fallback_distributions: [uniform, zipf1.0, poisson_n2]
+
+columns:
+  - { dataset: msmarco_urls, column: url }
+  - { dataset: tpch,         column: c_comment }
+
+smoke:
+  # One block baseline (zstd) + two per-string (fsst, onpair) against the
+  # committed V-D fixture (1000 rows), Zipf(1.0) under BOTH layouts, warm.
+  # block_budget_bytes is set tiny so the fixture splits into many blocks and the
+  # identity↔scramble difference is exercised for zstd. n_samples kept small so
+  # the smoke runs in <1 sec. No real-data dependency.
+  fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col
+  dataset: synthetic_vd_smoke_fixture
+  column:  L32_sigma16_rho0.7
+  baselines: [zstd, fsst, onpair]
+  distribution: zipf1.0
+  layouts: [identity, scramble]
+  block_budget_bytes: 1024
+  cache_state: warm
+  n_samples: 2000
