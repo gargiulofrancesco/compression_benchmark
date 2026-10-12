@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # OnPair scope-fence audit. Forbidden APIs MUST NOT appear in
-# runners/onpair/. Mirrors tools/lint/{bpe,rlz}_scope_audit.sh.
+# runners/onpair/.
 #
 # Forbidden surface area:
 #   - contains(...) / equals(...)   — KMP / EQ ops (out of scope)
 #   - kmp_automaton / aho_corasick / eq_automaton / eq_search — forbidden headers
 #   - pthread_create / std::thread / omp_set_num_threads — single-thread fairness
 #
-# Wired into the Makefile `lint:` target after rlz_scope_audit.sh.
+# Wired into the Makefile `lint:` target.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGET="$ROOT/runners/onpair"

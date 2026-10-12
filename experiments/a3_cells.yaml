@@ -1,4 +1,4 @@
-# step 3 — A3 ablation grid (sample_fraction sweep).
+# A3 ablation grid (sample_fraction sweep; Section VIII-C, Fig. 6 right).
 #
 # Sweep: DynamicThreshold sample_fraction ∈ {0.05, 0.15, 0.30, 0.60, 1.0}
 # × 6 headline columns = 30 single-strategy probes.
@@ -8,14 +8,13 @@
 # pairing — that is A1 (a1_cells.yaml). 0.15 is the headline default,
 # so A3 brackets it on both sides; 1.0 = train on the full column.
 #
-# (Roster: the paper's high-cardinality headline columns;
-#  restricted to the paper's six headline columns.)
+# (Columns: the paper's six headline columns.)
 #
-# Smoke: single cell (f=0.30 × V-D fixture, split inline via the
+# Smoke: single cell (f=0.30 × synthetic fixture, split inline via the
 # orchestrator.heldout splitter). Runs in <1 sec.
 #
-# Headline grid (NOT exercised by `make a3-smoke`; requires `make datasets`
-# first; runs via `make a3` on a measurement rig only):
+# Full grid (NOT exercised by `make a3-smoke`; requires `make datasets`
+# first; runs via `make a3`):
 
 sample_fractions: [0.05, 0.15, 0.30, 0.60, 1.0]
 bits: 16
@@ -31,7 +30,7 @@ columns:
   - { dataset: tpch,            column: c_comment }
 
 smoke:
-  # Single-cell A3 smoke: f=0.30 against the V-D synthetic fixture (1000 rows
+  # Single-cell A3 smoke: f=0.30 against the synthetic fixture (1000 rows
   # @ L=32, σ=16, ρ=0.7). No real-data dependency; the held-out splitter
   # slices into train (800) + heldout (200) at run time.
   fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col

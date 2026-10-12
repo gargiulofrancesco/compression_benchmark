@@ -1,4 +1,4 @@
-/* Hand-rolled config.h shim for onpair_bench (Phase 4 RLZ Step 1).
+/* Hand-rolled config.h shim for the benchmark's RLZ baseline.
  * Replaces the upstream cmake-2.4-era configure_file machinery.
  * Targets POSIX (darwin/linux) with C99 stdint+inttypes available.
  */

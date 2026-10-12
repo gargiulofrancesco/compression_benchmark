@@ -1,4 +1,4 @@
-// BPE card mandate: determinism. Compress the same column
+// BPE determinism. Compress the same column
 // twice at V=16384 with the same config; assert wire bytes bit-identical.
 // `enable_sampling=false` makes BPE training fully deterministic given the
 // same corpus + args; protobuf serialization is deterministic.

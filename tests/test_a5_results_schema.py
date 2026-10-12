@@ -1,4 +1,4 @@
-"""step 6 — a5_results.sql schema gate.
+"""a5_results.sql schema test.
 
 Asserts:
   - The schema file parses and executes against a fresh sqlite DB.

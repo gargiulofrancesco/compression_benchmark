@@ -25,7 +25,7 @@ namespace onpair_bench {
 
 namespace {
 
-// JSON helpers (mirror rpdac_runner.cpp; intentional duplication).
+// JSON helpers (each runner keeps its own copy).
 
 uint64_t extract_u64(const std::string& cfg, const std::string& key, uint64_t def) {
     std::string needle = "\"" + key + "\"";
@@ -147,7 +147,7 @@ LoadedWire load_wire(const std::string& in_path) {
 
 // FUSED single-pass decode: unpack each (pos,len,lit) triple inline (one 64-bit
 // load + three shift/masks) and wildcopy it STRAIGHT from R into out.bytes — no
-// 3×P_total uint32 scratch (the old unpack_triples materialisation = ~107 MB of
+// 3×P_total uint32 scratch (materialising unpacked triples costs ~107 MB of
 // extra memory traffic) and no per-factor variable-length memcpy dispatch (the
 // over-copy of a fixed 32 B, LZ4-style, advancing by the true len). Requires the
 // caller to have sized out.bytes to decoded_bytes + kOutSlack and load_wire to
@@ -287,16 +287,16 @@ RlzConfig parse_rlz_config(const std::string& cfg_json) {
     RlzConfig c;
     c.reference_size_fraction = extract_double(cfg_json,
                                                  "reference_size_fraction", 0.05);
-    // EXPERIMENTAL absolute-size override (off by default).
+    // Absolute-size override (off by default; reference-size sweep).
     c.reference_size_bytes = extract_u64(cfg_json, "reference_size_bytes", 0);
-    //: in {0.01, 0.05, 0.25} — enforced ONLY on the headline (fraction) path.
+    // in {0.01, 0.05, 0.25} — enforced ONLY on the fraction path.
     if (c.reference_size_bytes == 0) {
         const double tol = 1e-9;
         if (!(std::fabs(c.reference_size_fraction - 0.01) < tol
               || std::fabs(c.reference_size_fraction - 0.05) < tol
               || std::fabs(c.reference_size_fraction - 0.25) < tol)) {
             throw std::runtime_error("rlz: reference_size_fraction not in "
-                "{0.01, 0.05, 0.25} (headline set)");
+                "{0.01, 0.05, 0.25}");
         }
     }
     c.wildcopy_bytes = static_cast<uint32_t>(extract_u64(cfg_json, "wildcopy_bytes", 32));
@@ -304,18 +304,18 @@ RlzConfig parse_rlz_config(const std::string& cfg_json) {
         && c.wildcopy_bytes != 32 && c.wildcopy_bytes != 64) {
         throw std::runtime_error("rlz: wildcopy_bytes must be one of {8,16,32,64}");
     }
-    // (revised): per-factor len field width; default 8 (short-string regime).
+    // Per-factor len field width; default 8 (short-string regime).
     c.max_len_bits = static_cast<uint32_t>(extract_u64(cfg_json, "max_len_bits", 8));
     if (c.max_len_bits < 4 || c.max_len_bits > 16) {
         throw std::runtime_error("rlz: max_len_bits out of range (must be 4..16)");
     }
     c.block_size = static_cast<uint32_t>(extract_u64(cfg_json, "block_size", 16384));
     if (c.block_size != 16384u) {
-        throw std::runtime_error("rlz: block_size must be 16384 (lock)");
+        throw std::runtime_error("rlz: block_size must be 16384");
     }
     c.seed = static_cast<uint32_t>(extract_u64(cfg_json, "seed", 42));
     if (c.seed != 42u) {
-        throw std::runtime_error("rlz: seed must be 42 (lock)");
+        throw std::runtime_error("rlz: seed must be 42");
     }
     c.threads = static_cast<uint32_t>(extract_u64(cfg_json, "threads", 1));
     if (c.threads != 1) {
@@ -360,7 +360,7 @@ OpResult RlzRunner::compress(const std::string& in_path,
     const uint64_t L = static_cast<uint64_t>(input_bytes);
     uint32_t K;
     if (cfg.reference_size_bytes > 0) {
-        // EXPERIMENTAL absolute dictionary size: K = ceil(bytes/block_size),
+        // Absolute dictionary size: K = ceil(bytes/block_size),
         // clamped so K*block_size <= L (sampling needs offsets in [0, L-block_size]).
         const uint64_t bs = cfg.block_size;
         uint64_t k = (cfg.reference_size_bytes + bs - 1) / bs;
@@ -389,10 +389,10 @@ OpResult RlzRunner::compress(const std::string& in_path,
 
     set_address_space_cap(cfg.mem_cap_gb * (1ull << 30));
 
-    // TIMED: sample R + build SA + factor-parse + bitpack (/the codec
+    // TIMED: sample R + build SA + factor-parse + bitpack (the codec
     // work). Input column already read; the wire write below is excluded.
     const auto t_comp0 = std::chrono::steady_clock::now();
-    // / INSIDE timed region: sample R + build SA + factor-parse.
+    // INSIDE timed region: sample R + build SA + factor-parse.
     std::vector<uint8_t>  R;
     std::vector<int32_t>  SA;
     std::vector<uint32_t> pos_stream, len_stream, lit_stream;
@@ -407,7 +407,7 @@ OpResult RlzRunner::compress(const std::string& in_path,
                                     cfg.block_size, cfg.seed, R);
         rlz_core::build_sa(R, SA);
 
-        //: cap every match at the len field's max (255 for the 8-bit
+        // Cap every match at the len field's max (255 for the 8-bit
         // default). Matches longer than this are split into successive factors —
         // negligible for the short independently-parsed strings we target.
         const uint32_t max_match_len = (1u << cfg.max_len_bits) - 1u;
@@ -439,11 +439,11 @@ OpResult RlzRunner::compress(const std::string& in_path,
     }
 
     const uint32_t P_total = static_cast<uint32_t>(pos_stream.size());
-    //: bits_per_pos = max(10, ceil_log2(R_len + 1)); clamp <= 32.
+    // bits_per_pos = max(10, ceil_log2(R_len + 1)); clamp <= 32.
     uint32_t bits_per_pos = ceil_log2_plus_one(R_len);
     if (bits_per_pos < 10u) bits_per_pos = 10u;
     if (bits_per_pos > 32u) bits_per_pos = 32u;
-    // (revised): len field width from config (default 8). Matches are
+    // len field width from config (default 8). Matches are
     // already capped at (1<<bits_per_len)-1 in the parse above, so every len fits.
     const uint32_t bits_per_len = cfg.max_len_bits;
 
@@ -523,8 +523,8 @@ OpResult RlzRunner::bulk_decode(const std::string& in_path,
         // UNTIMED: pre-allocate the EXACT output buffer (decoded_bytes from the
         // wire) + per-row offsets + the unpack scratch, all OUTSIDE the timer.
         // resize() value-inits the output here so its pages are resident before
-        // the timed region (no first-touch faults), and — unlike the old path —
-        // the timer no longer pays for the output vector growing via insert().
+        // the timed region (no first-touch faults), and the timer does not pay
+        // for the output vector growing.
         out.bytes.resize(static_cast<size_t>(w.decoded_bytes) + kOutSlack);
         out.offsets.assign(static_cast<size_t>(w.N) + 1, 0u);
         // TIMED: the decode kernel ONLY — one fused pass that unpacks each triple
@@ -614,7 +614,7 @@ OpResult RlzRunner::prefix_search(const std::string& in_path,
     uint64_t t_scan_ns = 0;
     std::vector<uint32_t> hits;
     try {
-        // FAIR PREFIX SCAN (W-7): RLZ is per-string, so decode only ~|needle| bytes
+        // PREFIX SCAN: RLZ is per-string, so decode only ~|needle| bytes
         // of EACH row from the resident reference (decode_row_into stops at `want`)
         // and test the prefix — not the whole column.
         const std::string_view nv{needle};
@@ -632,7 +632,7 @@ OpResult RlzRunner::prefix_search(const std::string& in_path,
     }
 
     // UNTIMED: write the hit list ([n_hits u32][hits u32]) — same wire as the shared
-    // decompress_then_scan path, so the G6 bit-equality gate is unchanged.
+    // decompress_then_scan path, so the prefix-search check is unchanged.
     std::ofstream f(out_path, std::ios::binary);
     if (!f) throw std::runtime_error("rlz: cannot open out_path " + out_path);
     uint32_t nh = static_cast<uint32_t>(n_hits);
@@ -648,11 +648,11 @@ OpResult RlzRunner::prefix_search(const std::string& in_path,
     return r;
 }
 
-// Random-access latency — PER-STRING (§8.4). RLZ copies ONLY row i's phrases from
+// Random-access latency — PER-STRING (Section VIII-B4). RLZ copies ONLY row i's phrases from
 // the resident reference R (decoded directly at their bit offset; O(|s_i|)) — the
-// same per-string class as FSST/OnPair, so its L_ra is skew/layout-insensitive.
+// same per-string class as FSST/OnPair.
 // Wire load + buffer sizing are one-time setup OUTSIDE the timed loop; no file I/O
-// in the loop. Refuses cleanly off the controlled x86 rig.
+// in the loop. Returns refused-env unless on x86-64 with an invariant TSC.
 OpResult RlzRunner::ra_latency(const std::string& in_path,
                                const std::string& /*out_path*/,
                                const std::string& cfg_json) {

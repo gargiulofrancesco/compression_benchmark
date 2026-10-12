@@ -15,6 +15,7 @@
 #include "unigram_model.h"
 
 #include <cmath>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "testharness.h"
 #include "third_party/absl/strings/str_cat.h"
 #include "third_party/absl/strings/str_join.h"
+#include "third_party/absl/strings/string_view.h"
 #include "util.h"
 
 namespace sentencepiece {
@@ -50,8 +52,8 @@ TEST(LatticeTest, SetSentenceTest) {
   EXPECT_STREQ("st", lattice.surface(2));
   EXPECT_STREQ("t", lattice.surface(3));
 
-  Lattice::Node *bos = lattice.bos_node();
-  Lattice::Node *eos = lattice.eos_node();
+  Lattice::Node* bos = lattice.bos_node();
+  Lattice::Node* eos = lattice.eos_node();
 
   EXPECT_EQ(-1, bos->id);
   EXPECT_EQ(-1, eos->id);
@@ -77,7 +79,7 @@ TEST(LatticeTest, InsertTest) {
   Lattice lattice;
   lattice.SetSentence("ABあい");
 
-  Lattice::Node *node[7];
+  Lattice::Node* node[7];
   node[0] = lattice.Insert(0, 1);
   node[1] = lattice.Insert(1, 1);
   node[2] = lattice.Insert(2, 1);
@@ -173,21 +175,21 @@ TEST(LatticeTest, ViterbiFromIncompleteLatticeTest) {
   lattice.Viterbi();
 }
 
-std::string GetTokenized(const std::vector<Lattice::Node *> &nodes) {
+std::string GetTokenized(const std::vector<Lattice::Node*>& nodes) {
   std::vector<std::string> tokens;
-  for (auto *node : nodes) {
+  for (auto* node : nodes) {
     tokens.push_back(std::string(node->piece));
   }
   return absl::StrJoin(tokens, " ");
 }
 
-void InsertWithScore(Lattice *lattice, int pos, int length, float score) {
+void InsertWithScore(Lattice* lattice, int pos, int length, float score) {
   lattice->Insert(pos, length)->score = score;
 }
 
-void InsertWithScoreAndId(Lattice *lattice, int pos, int length, float score,
+void InsertWithScoreAndId(Lattice* lattice, int pos, int length, float score,
                           int id) {
-  auto *node = lattice->Insert(pos, length);
+  auto* node = lattice->Insert(pos, length);
   node->score = score;
   node->id = id;
 }
@@ -259,17 +261,17 @@ TEST(LatticeTest, NBestSampleTest) {
     probs["A BC"] = std::exp(inv_theta * (0.0 + 0.5));
     probs["A B C"] = std::exp(inv_theta * (0.0 + 0.0 + 0.1));
 
-    for (const auto &it : strings) {
+    for (const auto& it : strings) {
       EXPECT_EQ(1, probs.count(it));
     }
 
     double Z = 0.0;
-    for (const auto &it : probs) Z += it.second;
-    for (auto &it : probs) it.second /= Z;
+    for (const auto& it : probs) Z += it.second;
+    for (auto& it : probs) it.second /= Z;
 
     std::map<std::pair<std::string, std::string>, float> pair_probs;
-    for (const auto &first : strings) {
-      for (const auto &second : strings) {
+    for (const auto& first : strings) {
+      for (const auto& second : strings) {
         if (first == second) {
           pair_probs[std::make_pair(first, second)] = 0;
         } else {
@@ -281,12 +283,12 @@ TEST(LatticeTest, NBestSampleTest) {
     }
 
     std::map<std::string, float> inclusion_probs;
-    for (const auto &string : strings) {
+    for (const auto& string : strings) {
       float inclusion_prob = 0.0;
-      for (const auto &other_string : strings) {
+      for (const auto& other_string : strings) {
         inclusion_prob += pair_probs[std::make_pair(string, other_string)];
       }
-      for (const auto &other_string : strings) {
+      for (const auto& other_string : strings) {
         inclusion_prob += pair_probs[std::make_pair(other_string, string)];
       }
       inclusion_probs[string] = inclusion_prob / 2;
@@ -300,7 +302,7 @@ TEST(LatticeTest, NBestSampleTest) {
       std::map<std::string, int> counts;
       for (int i = 0; i < kTrials; i++) {
         auto nbests = lattice.NBest(num_samples, true, inv_theta);
-        for (const auto &nbest : nbests) {
+        for (const auto& nbest : nbests) {
           counts[GetTokenized(nbest.first)]++;
         }
       }
@@ -310,7 +312,7 @@ TEST(LatticeTest, NBestSampleTest) {
       std::map<std::string, float> probs_to_use =
           (num_samples == 1 ? probs : inclusion_probs);
 
-      for (const auto &it : probs_to_use) {
+      for (const auto& it : probs_to_use) {
         EXPECT_NEAR(it.second, 1.0 * counts[it.first] / (kTrials * num_samples),
                     0.02);
       }
@@ -340,14 +342,14 @@ TEST(LatticeTest, CalculateEntropyTest) {
     probs["A B C"] = std::exp(inv_theta * (0.0 + 0.0 + 0.1));
 
     double Z = 0.0;
-    for (const auto &it : probs) Z += it.second;
-    for (auto &it : probs) it.second /= Z;
+    for (const auto& it : probs) Z += it.second;
+    for (auto& it : probs) it.second /= Z;
 
-    for (const auto &it : strings) {
+    for (const auto& it : strings) {
       EXPECT_EQ(1, probs.count(it));
     }
     float entropy = 0.0;
-    for (const auto &it : probs) {
+    for (const auto& it : probs) {
       entropy += (it.second * std::log(it.second));
     }
     EXPECT_NEAR(-entropy, lattice.CalculateEntropy(inv_theta), 0.02);
@@ -371,7 +373,7 @@ TEST(LatticeTest, ForwardAlgorithmTest) {
     EXPECT_EQ(alpha.size(), 8);  // 6 nodes, plus BOS, EOS
     // only alpha[C], alpha[EOS] have non-zero alpha
     for (int i : {0, 1, 2, 3}) {
-      for (const auto &node : lattice.begin_nodes(i)) {
+      for (const auto& node : lattice.begin_nodes(i)) {
         if (i < 2) {
           EXPECT_EQ(alpha[node->node_id], 0.0);
         } else if (i == 2) {
@@ -448,8 +450,8 @@ TEST(LatticeTest, SampleTest) {
 
     // Computes expected probabilities.
     double Z = 0.0;
-    for (const auto &it : probs) Z += it.second;
-    for (auto &it : probs) it.second /= Z;
+    for (const auto& it : probs) Z += it.second;
+    for (auto& it : probs) it.second /= Z;
 
     // Samples `kTrial` times and verifies the probabilities.
     constexpr int kTrial = 100000;
@@ -459,7 +461,7 @@ TEST(LatticeTest, SampleTest) {
     }
 
     EXPECT_EQ(probs.size(), freq.size());
-    for (const auto &it : probs) {
+    for (const auto& it : probs) {
       EXPECT_NEAR(it.second, 1.0 * freq[it.first] / kTrial, 0.02);
     }
   }
@@ -467,9 +469,9 @@ TEST(LatticeTest, SampleTest) {
 
 ModelProto MakeBaseModelProto() {
   ModelProto model_proto;
-  auto *sp1 = model_proto.add_pieces();
-  auto *sp2 = model_proto.add_pieces();
-  auto *sp3 = model_proto.add_pieces();
+  auto* sp1 = model_proto.add_pieces();
+  auto* sp2 = model_proto.add_pieces();
+  auto* sp3 = model_proto.add_pieces();
 
   sp1->set_type(ModelProto::SentencePiece::UNKNOWN);
   sp1->set_piece("<unk>");
@@ -481,24 +483,9 @@ ModelProto MakeBaseModelProto() {
   return model_proto;
 }
 
-// Returns model protos in parameterized tests.
-const std::vector<Model::EncoderVersion> &GetEncoderVersions() {
-  static const std::vector<Model::EncoderVersion> &v =
-      *new std::vector<Model::EncoderVersion>{Model::kOptimized,
-                                              Model::kOriginal};
-  return v;
-}
-
-class UnigramModelTest : public test::TestWithParam<Model::EncoderVersion> {
- protected:
-  void SetUp() override { encoder_version_ = GetParam(); }
-  void TearDown() override {}
-  Model::EncoderVersion encoder_version_;
-};
-
-void AddPiece(ModelProto *model_proto, const std::string &piece,
+void AddPiece(ModelProto* model_proto, const std::string& piece,
               float score = 0.0) {
-  auto *sp = model_proto->add_pieces();
+  auto* sp = model_proto->add_pieces();
   sp->set_piece(piece);
   sp->set_score(score);
 }
@@ -542,17 +529,17 @@ TEST(UnigramModelTest, SampleEncodeAndScoreTest) {
     probs["A BC"] = std::exp(inv_theta * (0.0 + 0.5));
     probs["A B C"] = std::exp(inv_theta * (0.0 + 0.0 + 0.1));
 
-    for (const auto &it : strings) {
+    for (const auto& it : strings) {
       EXPECT_EQ(1, probs.count(it));
     }
 
     double Z = 0.0;
-    for (const auto &it : probs) Z += it.second;
-    for (auto &it : probs) it.second /= Z;
+    for (const auto& it : probs) Z += it.second;
+    for (auto& it : probs) it.second /= Z;
 
     std::map<std::pair<std::string, std::string>, float> pair_probs;
-    for (const auto &first : strings) {
-      for (const auto &second : strings) {
+    for (const auto& first : strings) {
+      for (const auto& second : strings) {
         if (first == second) {
           pair_probs[std::make_pair(first, second)] = 0;
         } else {
@@ -564,12 +551,12 @@ TEST(UnigramModelTest, SampleEncodeAndScoreTest) {
     }
 
     std::map<std::string, float> inclusion_probs;
-    for (const auto &string : strings) {
+    for (const auto& string : strings) {
       float inclusion_prob = 0.0;
-      for (const auto &other_string : strings) {
+      for (const auto& other_string : strings) {
         inclusion_prob += pair_probs[std::make_pair(string, other_string)];
       }
-      for (const auto &other_string : strings) {
+      for (const auto& other_string : strings) {
         inclusion_prob += pair_probs[std::make_pair(other_string, string)];
       }
       inclusion_probs[string] = inclusion_prob / 2;
@@ -584,9 +571,9 @@ TEST(UnigramModelTest, SampleEncodeAndScoreTest) {
         NBestEncodeResult sample = model.SampleEncodeAndScore(
             "ABC", inv_theta, num_samples, true, false);
 
-        for (const auto &it : sample) {
+        for (const auto& it : sample) {
           std::vector<std::string> tokens;
-          for (const auto &inner_it : it.first) {
+          for (const auto& inner_it : it.first) {
             tokens.push_back(std::string(inner_it.first));
           }
           std::string sample_string = absl::StrJoin(tokens, " ");
@@ -601,8 +588,8 @@ TEST(UnigramModelTest, SampleEncodeAndScoreTest) {
       std::map<std::string, float> probs_to_use =
           (num_samples == 1 ? probs : inclusion_probs);
 
-      for (const auto &it : scores) Z += it.second;
-      for (const auto &it : probs_to_use) {
+      for (const auto& it : scores) Z += it.second;
+      for (const auto& it : probs_to_use) {
         EXPECT_NEAR(it.second, 1.0 * counts[it.first] / (kTrials * num_samples),
                     0.02);
         // The expectation is quite loose, use a higher tolerance
@@ -612,7 +599,34 @@ TEST(UnigramModelTest, SampleEncodeAndScoreTest) {
   }
 }
 
-TEST_P(UnigramModelTest, PieceToIdTest) {
+TEST(UnigramModelTest, SampleEncodeAndScoreSinglePathTest) {
+  // Regression test for segfault when wor=true and include_best=true on an
+  // input that has only a single unique Viterbi path (issue #1198).
+  ModelProto model_proto = MakeBaseModelProto();
+  // Only one piece matches "A", so there is exactly one segmentation path.
+  AddPiece(&model_proto, "A", 0.0);   // 3
+  AddPiece(&model_proto, "B", 0.0);   // 4
+  AddPiece(&model_proto, "AB", 0.5);  // 5
+
+  Model model(model_proto);
+
+  // "A" can only be segmented as ["A"], a single unique path.
+  // Previously this would segfault; now it should return a result with exactly
+  // the best path and no crash.
+  for (int samples = 1; samples <= 3; ++samples) {
+    NBestEncodeResult result =
+        model.SampleEncodeAndScore("A", 1.0, samples, /*wor=*/true,
+                                   /*include_best=*/true);
+    // Must not crash and must return the best-path result.
+    EXPECT_EQ(1, result.size());
+    EXPECT_EQ(1, result[0].first.size());
+    EXPECT_EQ("A", result[0].first[0].first);
+    // Inclusion probability for a deterministic best path is log(1) == 0.
+    EXPECT_NEAR(0.0, result[0].second, 1e-6);
+  }
+}
+
+TEST(UnigramModelTest, PieceToIdTest) {
   ModelProto model_proto = MakeBaseModelProto();
 
   AddPiece(&model_proto, "a", 0.1);
@@ -621,13 +635,11 @@ TEST_P(UnigramModelTest, PieceToIdTest) {
   AddPiece(&model_proto, "d", 0.4);
 
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   EXPECT_EQ(model_proto.SerializeAsString(),
             model.model_proto().SerializeAsString());
 
   EXPECT_NEAR(0.1, model.min_score(), 0.001);
-  EXPECT_NEAR(0.4, model.max_score(), 0.001);
 
   EXPECT_EQ(0, model.PieceToId("<unk>"));
   EXPECT_EQ(1, model.PieceToId("<s>"));
@@ -675,11 +687,10 @@ TEST_P(UnigramModelTest, PieceToIdTest) {
   EXPECT_TRUE(model.Encode("").empty());
 }
 
-TEST_P(UnigramModelTest, PopulateNodesAllUnknownsTest) {
+TEST(UnigramModelTest, PopulateNodesAllUnknownsTest) {
   ModelProto model_proto = MakeBaseModelProto();
   AddPiece(&model_proto, "x");
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   Lattice lattice;
   lattice.SetSentence("abc");
@@ -694,7 +705,7 @@ TEST_P(UnigramModelTest, PopulateNodesAllUnknownsTest) {
   EXPECT_EQ(0, lattice.begin_nodes(2)[0]->id);
 }
 
-TEST_P(UnigramModelTest, PopulateNodesTest) {
+TEST(UnigramModelTest, PopulateNodesTest) {
   ModelProto model_proto = MakeBaseModelProto();
 
   AddPiece(&model_proto, "a", 0.1);   // 3
@@ -703,7 +714,6 @@ TEST_P(UnigramModelTest, PopulateNodesTest) {
   AddPiece(&model_proto, "bc", 0.4);  // 6
 
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   Lattice lattice;
   lattice.SetSentence("abc");
@@ -726,7 +736,7 @@ TEST_P(UnigramModelTest, PopulateNodesTest) {
   EXPECT_NEAR(0.4, lattice.begin_nodes(1)[1]->score, 0.001);
 }
 
-TEST_P(UnigramModelTest, PopulateNodesWithUnusedTest) {
+TEST(UnigramModelTest, PopulateNodesWithUnusedTest) {
   ModelProto model_proto = MakeBaseModelProto();
 
   AddPiece(&model_proto, "a", 0.1);   // 3
@@ -738,7 +748,6 @@ TEST_P(UnigramModelTest, PopulateNodesWithUnusedTest) {
   model_proto.mutable_pieces(6)->set_type(ModelProto::SentencePiece::UNUSED);
 
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   Lattice lattice;
   lattice.SetSentence("abc");
@@ -753,7 +762,7 @@ TEST_P(UnigramModelTest, PopulateNodesWithUnusedTest) {
   EXPECT_EQ(0, lattice.begin_nodes(2)[0]->id);
 }
 
-TEST_P(UnigramModelTest, ModelNBestTest) {
+TEST(UnigramModelTest, ModelNBestTest) {
   ModelProto model_proto = MakeBaseModelProto();
   AddPiece(&model_proto, "a", 0.0);     // 3
   AddPiece(&model_proto, "b", 0.0);     // 4
@@ -763,7 +772,6 @@ TEST_P(UnigramModelTest, ModelNBestTest) {
   AddPiece(&model_proto, "abc", 10.0);  // 8
 
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   auto nbest = model.NBestEncode("", 10);
   EXPECT_EQ(1, nbest.size());
@@ -779,7 +787,41 @@ TEST_P(UnigramModelTest, ModelNBestTest) {
   EXPECT_FALSE(sample.empty());
 }
 
-TEST_P(UnigramModelTest, EncodeTest) {
+TEST(UnigramModelTest, ModelNBestTimeoutTest) {
+  const int original_timeout = sentencepiece::GetNBestTimeout();
+  ModelProto model_proto = MakeBaseModelProto();
+  AddPiece(&model_proto, "a", -1.0);
+  AddPiece(&model_proto, "b", -1.0);
+  AddPiece(&model_proto, "c", -1.0);
+  AddPiece(&model_proto, "ab", -0.5);
+  AddPiece(&model_proto, "bc", -0.5);
+  AddPiece(&model_proto, "abc", 0.0);
+
+  Model model(model_proto);
+
+  // Without timeout, we get 4 paths for "abc"
+  auto nbest = model.NBestEncode("abc", 10);
+  EXPECT_EQ(4, nbest.size());
+
+  // With a very large timeout, we should still get 4 paths
+  sentencepiece::SetNBestTimeout(10000);  // 10 second
+  nbest = model.NBestEncode("abc", 10);
+  EXPECT_EQ(4, nbest.size());
+
+  // With a very small timeout (1ms) and a long input, it should timeout
+  // and fallback to Viterbi (size 1).
+  std::string long_input;
+  for (int i = 0; i < 10000; ++i) {
+    long_input += "abc";
+  }
+
+  sentencepiece::SetNBestTimeout(1);  // 1 ms
+  nbest = model.NBestEncode(long_input, 100);
+  EXPECT_EQ(1, nbest.size());  // fallback to viterbi.
+  sentencepiece::SetNBestTimeout(original_timeout);
+}
+
+TEST(UnigramModelTest, EncodeTest) {
   ModelProto model_proto = MakeBaseModelProto();
   AddPiece(&model_proto, "ab", 0.0);         // 3
   AddPiece(&model_proto, "cd", -0.1);        // 4
@@ -802,7 +844,6 @@ TEST_P(UnigramModelTest, EncodeTest) {
       ModelProto::SentencePiece::USER_DEFINED);
 
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
 
   EncodeResult result;
 
@@ -870,7 +911,7 @@ TEST_P(UnigramModelTest, EncodeTest) {
   EXPECT_EQ("cd", result[3].first);
 }
 
-TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
+TEST(UnigramModelTest, EncodeWithUnusedTest) {
   ModelProto model_proto = MakeBaseModelProto();
 
   AddPiece(&model_proto, "abcd", 10.0);  // 3
@@ -885,7 +926,6 @@ TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
   // No unused.
   {
     Model model(model_proto);
-    model.SetEncoderVersion(encoder_version_);
     const auto result = model.Encode("abcd");
     EXPECT_EQ(1, result.size());
     EXPECT_EQ("abcd", result[0].first);
@@ -894,7 +934,6 @@ TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
   {
     model_proto.mutable_pieces(3)->set_type(ModelProto::SentencePiece::UNUSED);
     Model model(model_proto);
-    model.SetEncoderVersion(encoder_version_);
     const auto result = model.Encode("abcd");
     EXPECT_EQ(2, result.size());
     EXPECT_EQ("abc", result[0].first);
@@ -905,7 +944,6 @@ TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
     model_proto.mutable_pieces(3)->set_type(ModelProto::SentencePiece::UNUSED);
     model_proto.mutable_pieces(5)->set_type(ModelProto::SentencePiece::UNUSED);
     Model model(model_proto);
-    model.SetEncoderVersion(encoder_version_);
     const auto result = model.Encode("abcd");
     EXPECT_EQ(2, result.size());
     EXPECT_EQ("abc", result[0].first);
@@ -919,7 +957,6 @@ TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
     model_proto.mutable_pieces(4)->set_type(ModelProto::SentencePiece::UNUSED);
     model_proto.mutable_pieces(5)->set_type(ModelProto::SentencePiece::NORMAL);
     Model model(model_proto);
-    model.SetEncoderVersion(encoder_version_);
     const auto result = model.Encode("abcd");
     EXPECT_EQ(2, result.size());
     EXPECT_EQ("ab", result[0].first);
@@ -927,7 +964,40 @@ TEST_P(UnigramModelTest, EncodeWithUnusedTest) {
   }
 }
 
-TEST_P(UnigramModelTest, VerifyOutputsEquivalent) {
+TEST(UnigramModelTest, ControlSymbolsNoSegmentTest) {
+  ModelProto model_proto = MakeBaseModelProto();
+
+  // For <s> (BOS)
+  AddPiece(&model_proto, "<", -1.0);  // ID 3
+  AddPiece(&model_proto, "s", -1.0);  // ID 4
+  AddPiece(&model_proto, ">", -1.0);  // ID 5
+  AddPiece(&model_proto, "<s", 0.0);  // ID 6
+
+  // For <unk> (UNKNOWN)
+  AddPiece(&model_proto, "u", -1.0);   // ID 7
+  AddPiece(&model_proto, "n", -1.0);   // ID 8
+  AddPiece(&model_proto, "k", -1.0);   // ID 9
+  AddPiece(&model_proto, "<u", 0.0);   // ID 10
+  AddPiece(&model_proto, "nk>", 0.0);  // ID 11
+
+  const Model model(model_proto);
+
+  {
+    EncodeResult result = model.Encode("<s>");
+    EXPECT_EQ(2, result.size());
+    EXPECT_EQ("<s", result[0].first);
+    EXPECT_EQ(">", result[1].first);
+  }
+
+  {
+    EncodeResult result = model.Encode("<unk>");
+    EXPECT_EQ(2, result.size());
+    EXPECT_EQ("<u", result[0].first);
+    EXPECT_EQ("nk>", result[1].first);
+  }
+}
+
+TEST(UnigramModelTest, VerifyOutputsEquivalent) {
   ModelProto model_proto = MakeBaseModelProto();
 
   AddPiece(&model_proto, "abcd", 10.0);  // 3
@@ -938,8 +1008,8 @@ TEST_P(UnigramModelTest, VerifyOutputsEquivalent) {
   AddPiece(&model_proto, "b", 1.9);      // 8
   AddPiece(&model_proto, "c", 2.0);      // 9
   AddPiece(&model_proto, "d", 1.0);      // 10
+
   Model model(model_proto);
-  model.SetEncoderVersion(encoder_version_);
   // Equivalent outputs.
   EXPECT_TRUE(model.VerifyOutputsEquivalent("", ""));
   EXPECT_TRUE(model.VerifyOutputsEquivalent("a b", "a b"));
@@ -950,8 +1020,159 @@ TEST_P(UnigramModelTest, VerifyOutputsEquivalent) {
   EXPECT_FALSE(model.VerifyOutputsEquivalent("ab", "a b"));
 }
 
-INSTANTIATE_TEST_SUITE_P(ParametrizedUnigramModelTests, UnigramModelTest,
-                         test::ValuesIn(GetEncoderVersions()));
+TEST(UnigramModelTest, ControlTokenMergeTest) {
+  ModelProto model_proto;
+  auto AddPieceWithType = [](ModelProto* proto, const std::string& piece,
+                             float score,
+                             ModelProto::SentencePiece::Type type) {
+    auto* sp = proto->add_pieces();
+    sp->set_piece(piece);
+    sp->set_score(score);
+    sp->set_type(type);
+  };
+
+  AddPieceWithType(&model_proto, "<unk>", 0.0,
+                   ModelProto::SentencePiece::UNKNOWN);
+  AddPieceWithType(&model_proto, "<s>", 0.0,
+                   ModelProto::SentencePiece::CONTROL);
+  AddPieceWithType(&model_proto, "</s>", 0.0,
+                   ModelProto::SentencePiece::CONTROL);
+  AddPieceWithType(&model_proto, "<", -1.0, ModelProto::SentencePiece::NORMAL);
+  AddPieceWithType(&model_proto, "s", -1.0, ModelProto::SentencePiece::NORMAL);
+  AddPieceWithType(&model_proto, ">", -1.0, ModelProto::SentencePiece::NORMAL);
+  AddPieceWithType(&model_proto, "<s", 0.0, ModelProto::SentencePiece::NORMAL);
+
+  const Model model(model_proto);
+  const auto result = model.Encode("<s>");
+
+  // Expected behavior: do NOT match CONTROL symbol <s>.
+  // Instead, it should segment into "<s" (ID 6) and ">" (ID 5).
+  EXPECT_EQ(2, result.size());
+  EXPECT_EQ("<s", result[0].first);
+  EXPECT_EQ(6, result[0].second);
+  EXPECT_EQ(">", result[1].first);
+  EXPECT_EQ(5, result[1].second);
+}
+
+TEST(UnigramModelTest, SpecialSymbolsNoSegmentTest) {
+  ModelProto model_proto = MakeBaseModelProto();
+  model_proto.mutable_trainer_spec()->set_byte_fallback(true);
+
+  // Add 256 byte pieces to satisfy InitializePieces check.
+  for (int i = 0; i < 256; ++i) {
+    auto* sp = model_proto.add_pieces();
+    sp->set_piece(ByteToPiece(i));
+    sp->set_type(ModelProto::SentencePiece::BYTE);
+  }
+
+  // Add an UNUSED piece.
+  // We use "abc" as UNUSED piece.
+  // And we add its characters so it can be split.
+  AddPiece(&model_proto, "a", -1.0);
+  AddPiece(&model_proto, "b", -1.0);
+  AddPiece(&model_proto, "c", -1.0);
+  AddPiece(&model_proto, "abc", 0.0);
+  model_proto.mutable_pieces(model_proto.pieces_size() - 1)
+      ->set_type(ModelProto::SentencePiece::UNUSED);
+
+  // Add character pieces for "<unk>" and "<s>"
+  AddPiece(&model_proto, "<", -1.0);
+  AddPiece(&model_proto, "u", -1.0);
+  AddPiece(&model_proto, "n", -1.0);
+  AddPiece(&model_proto, "k", -1.0);
+  AddPiece(&model_proto, "s", -1.0);
+  AddPiece(&model_proto, ">", -1.0);
+
+  // Add intermediate pieces that could form "<s>" and "<unk>"
+  AddPiece(&model_proto, "<s", 0.0);
+  AddPiece(&model_proto, "<u", 0.0);
+  AddPiece(&model_proto, "nk", 0.0);
+
+  // Add intermediate pieces for byte piece "<0x0A>" (newline)
+  // Byte 10 is 0x0A. ByteToPiece(10) is "<0x0A>".
+  // Characters: "<", "0", "x", "0", "A", ">"
+  AddPiece(&model_proto, "0", -1.0);
+  AddPiece(&model_proto, "x", -1.0);
+  AddPiece(&model_proto, "A", -1.0);
+  AddPiece(&model_proto, "<0", 0.0);
+  AddPiece(&model_proto, "x0", 0.0);
+  AddPiece(&model_proto, "A>", 0.0);
+
+  Model model(model_proto);
+
+  // 1. Test CONTROL symbol "<s>".
+  // Expected: split to "<s" and ">".
+  {
+    auto result = model.Encode("<s>");
+    ASSERT_EQ(2, result.size());
+    EXPECT_EQ("<s", result[0].first);
+    EXPECT_EQ(">", result[1].first);
+  }
+
+  // 2. Test UNKNOWN symbol "<unk>".
+  // Expected: split and not matched as "<unk>".
+  {
+    auto result = model.Encode("<unk>");
+    EXPECT_GT(result.size(), 1);
+    for (const auto& part : result) {
+      EXPECT_NE("<unk>", part.first);
+    }
+  }
+
+  // 3. Test UNUSED symbol "abc".
+  // Expected: split to "a", "b", "c".
+  {
+    auto result = model.Encode("abc");
+    ASSERT_EQ(3, result.size());
+    EXPECT_EQ("a", result[0].first);
+    EXPECT_EQ("b", result[1].first);
+    EXPECT_EQ("c", result[2].first);
+  }
+
+  // 4. Test BYTE symbol "<0x0A>".
+  // Expected: NOT matched as "<0x0A>".
+  {
+    std::string byte_piece = ByteToPiece(10);
+    auto result = model.Encode(byte_piece);
+    EXPECT_GT(result.size(), 1);
+    for (const auto& part : result) {
+      EXPECT_NE(byte_piece, part.first);
+    }
+  }
+}
+
+TEST(UnigramModelTest, RejectNaNAndInfScoresTest) {
+  for (float bad_score : {std::numeric_limits<float>::quiet_NaN(),
+                          std::numeric_limits<float>::infinity(),
+                          -std::numeric_limits<float>::infinity()}) {
+    ModelProto model_proto = MakeBaseModelProto();
+    AddPiece(&model_proto, "ab", bad_score);
+    Model model(model_proto);
+    EXPECT_FALSE(model.status().ok());
+  }
+}
+
+TEST(UnigramModelTest, LongTextScoreRecenteringTest) {
+  ModelProto model_proto = MakeBaseModelProto();
+  AddPiece(&model_proto, "ab", -10.0);
+  AddPiece(&model_proto, "cd", -10.0);
+  Model model(model_proto);
+  ASSERT_TRUE(model.status().ok());
+
+  // Create a long text of 30,000 "ab" pairs (60,000 characters).
+  // Each "ab" has a score of -10.0, so 30,000 pairs reach -300,000.0,
+  // triggering the score re-centering threshold (-100,000.0) multiple times.
+  std::string long_input;
+  long_input.reserve(60000);
+  for (int i = 0; i < 30000; ++i) {
+    long_input += "ab";
+  }
+  EncodeResult result = model.Encode(long_input);
+  EXPECT_EQ(30000, result.size());
+  for (const auto& pair : result) {
+    EXPECT_EQ("ab", pair.first);
+  }
+}
 
 }  // namespace unigram
 }  // namespace sentencepiece

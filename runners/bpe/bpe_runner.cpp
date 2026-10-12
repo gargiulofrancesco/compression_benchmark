@@ -34,7 +34,7 @@ namespace onpair_bench {
 
 namespace {
 
-// --- JSON helpers (mirror bigrepair_runner.cpp; intentional duplication) ---
+// --- JSON helpers (each runner keeps its own copy) ---
 
 std::string extract_str(const std::string& cfg, const std::string& key, const std::string& def) {
     std::string needle = "\"" + key + "\"";
@@ -223,15 +223,15 @@ void set_address_space_cap(uint64_t mem_cap_bytes) {
     (void)::setrlimit(RLIMIT_AS, &rl);
 }
 
-bool is_oom_status(const sentencepiece::util::Status& s) {
+bool is_oom_status(const absl::Status& s) {
     // Map allocator-style failure codes to status='oom'. SentencePiece uses
     // absl-style codes; RESOURCE_EXHAUSTED is the canonical OOM signal.
-    using sentencepiece::util::StatusCode;
+    using absl::StatusCode;
     return s.code() == StatusCode::kResourceExhausted
         || s.code() == StatusCode::kOutOfRange;
 }
 
-// Compose CLI-style training args per + +.
+// Compose CLI-style training args.
 // max_sentence_length must accommodate the longest column row.
 std::string make_train_args(uint32_t V, size_t max_row_size) {
     std::ostringstream o;
@@ -242,6 +242,7 @@ std::string make_train_args(uint32_t V, size_t max_row_size) {
       << " --add_dummy_prefix=false"
       << " --remove_extra_whitespaces=false"
       << " --character_coverage=1.0"
+      << " --max_sentencepiece_length=16" // explicit parity with OnPair's token cap
       << " --num_threads=1"
       << " --shuffle_input_sentence=false"
       << " --train_extremely_large_corpus=false"
@@ -265,12 +266,11 @@ BpeConfig parse_bpe_config(const std::string& cfg) {
     c.vocab_size = static_cast<uint32_t>(extract_u64(cfg, "vocab_size", 16384));
     if (c.vocab_size != 4096 && c.vocab_size != 16384
         && c.vocab_size != 65536 && c.vocab_size != 262144) {
-        throw std::runtime_error("bpe: vocab_size not in {4096, 16384, 65536, 262144} "
-                                 "(headline set)");
+        throw std::runtime_error("bpe: vocab_size not in {4096, 16384, 65536, 262144}");
     }
     c.normalization = extract_str(cfg, "normalization", "identity");
     if (c.normalization != "identity") {
-        throw std::runtime_error("bpe: normalization must be 'identity' (lock)");
+        throw std::runtime_error("bpe: normalization must be 'identity'");
     }
     c.sample_fraction = extract_f64(cfg, "sample_fraction", 0.15);
     if (!(c.sample_fraction > 0.0 && c.sample_fraction <= 1.0)) {
@@ -278,7 +278,7 @@ BpeConfig parse_bpe_config(const std::string& cfg) {
     }
     c.threads = static_cast<uint32_t>(extract_u64(cfg, "threads", 1));
     if (c.threads != 1) {
-        throw std::runtime_error("bpe: threads must be 1 (single-thread fairness lock)");
+        throw std::runtime_error("bpe: threads must be 1 (every baseline runs single-threaded)");
     }
     c.mem_cap_gb = extract_u64(cfg, "mem_cap_gb", 64);
     if (c.mem_cap_gb < 1 || c.mem_cap_gb > 1024) {
@@ -321,13 +321,14 @@ OpResult BpeRunner::compress(const std::string& in_path,
     set_address_space_cap(cfg.mem_cap_gb * (1ull << 30));
     (void)max_row;
     const ByteUnicode& bu = byte_unicode();
+    const auto t_sample_prepare0 = std::chrono::steady_clock::now();
 
     // Training corpus: a uniformly random sample of rows totalling
     // ~sample_fraction of the column bytes, drawn in seed-42-shuffled order —
     // the SAME sampling semantics as OnPair's trainer (which shuffles row
-    // order with seed 42 and consumes rows until its byte budget). The earlier
-    // head-prefix sampling was biased on
-    // columns with positional drift and depressed BPE's dictionary quality.
+    // order with seed 42 and consumes rows until its byte budget). Sampling a
+    // head prefix instead would be biased on
+    // columns with positional drift and depress BPE's dictionary quality.
     // Each row is byte<->unicode mapped, plus one coverage line of all 256
     // codepoints so every byte is an atomic symbol even if absent from the
     // sample. ENCODING (below) is always over the FULL column.
@@ -351,6 +352,9 @@ OpResult BpeRunner::compress(const std::string& in_path,
         if (sampled_bytes >= sample_budget && sampled_rows >= 1) break;
     }
     sentences.push_back(bu.coverage);             // 256-codepoint coverage line
+    const uint64_t t_sample_prepare_ns = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t_sample_prepare0).count());
 
     std::string serialized_proto;
     uint64_t t_train_ns = 0;
@@ -365,7 +369,7 @@ OpResult BpeRunner::compress(const std::string& in_path,
         if (!status.ok()) {
             OpResult r;
             r.status = is_oom_status(status) ? "oom" : "crash";
-            r.notes  = std::string("SentencePieceTrainer::Train failed: ") + status.message();
+            r.notes  = std::string("SentencePieceTrainer::Train failed: ") + std::string(status.message());
             return r;
         }
     } catch (const std::bad_alloc&) {
@@ -378,12 +382,17 @@ OpResult BpeRunner::compress(const std::string& in_path,
     const uint32_t M = static_cast<uint32_t>(serialized_proto.size());
 
     sentencepiece::SentencePieceProcessor proc;
+    uint64_t t_model_load_ns = 0;
     {
+        const auto t0 = std::chrono::steady_clock::now();
         auto status = proc.LoadFromSerializedProto(serialized_proto);
+        t_model_load_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count());
         if (!status.ok()) {
             OpResult r;
             r.status = "crash";
-            r.notes  = std::string("LoadFromSerializedProto failed: ") + status.message();
+            r.notes  = std::string("LoadFromSerializedProto failed: ") + std::string(status.message());
             return r;
         }
     }
@@ -404,7 +413,7 @@ OpResult BpeRunner::compress(const std::string& in_path,
             if (!st.ok()) {
                 OpResult r;
                 r.status = is_oom_status(st) ? "oom" : "crash";
-                r.notes  = std::string("Encode failed: ") + st.message();
+                r.notes  = std::string("Encode failed: ") + std::string(st.message());
                 return r;
             }
             for (int id : ids) {
@@ -432,8 +441,13 @@ OpResult BpeRunner::compress(const std::string& in_path,
     const uint32_t B = bitpack::bits_for_vocab(V);
 
     std::vector<uint8_t> packed_tokens;
+    uint64_t t_pack_ns = 0;
     try {
+        const auto t0 = std::chrono::steady_clock::now();
         bitpack::pack_uniform(tokens, B, packed_tokens);
+        t_pack_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count());
     } catch (const std::bad_alloc&) {
         OpResult r;
         r.status = "oom";
@@ -445,6 +459,7 @@ OpResult BpeRunner::compress(const std::string& in_path,
     //   [M][model_bytes][N][V][T][decoded_bytes u64][tok_offsets[N+1]][packed_tokens]
     // decoded_bytes = exact total decoded payload size (== input_bytes, lossless);
     // lets bulk_decode size its output buffer exactly OUTSIDE the timer.
+    const auto t_serialize0 = std::chrono::steady_clock::now();
     std::ofstream f(out_path, std::ios::binary);
     if (!f) throw std::runtime_error("bpe: cannot open out_path " + out_path);
     f.write(reinterpret_cast<const char*>(&M), 4);
@@ -463,6 +478,9 @@ OpResult BpeRunner::compress(const std::string& in_path,
                 static_cast<std::streamsize>(packed_tokens.size()));
     }
     f.close();
+    const uint64_t t_serialize_ns = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - t_serialize0).count());
 
     // FAIR DICTIONARY ACCOUNTING. The compression-ratio model cost is
     // the DECODE-MINIMAL id->bytes table — concatenated RAW piece bytes (mapping
@@ -514,14 +532,29 @@ OpResult BpeRunner::compress(const std::string& in_path,
     r.metrics.emplace_back("output_bytes",     static_cast<double>(output_bytes));
     r.metrics.emplace_back("wire_bytes",       static_cast<double>(wire_bytes));
     r.metrics.emplace_back("num_rows",         static_cast<double>(N));
-    // Training vs. encoding time reported SEPARATELY (fairness-audit requirement
-    // for baselines with a training phase): T_c derives from t_encode_ns over the
-    // full column; t_train_ns is the appendix build-time row (alongside Re-Pair).
+    // Construction phases are reported separately (training, full-column
+    // encoding, and the small glue phases) so cost can be broken down.
     r.metrics.emplace_back("t_train_ns",       static_cast<double>(t_train_ns));
     r.metrics.emplace_back("t_encode_ns",      static_cast<double>(t_encode_ns));
-    // Uniform throughput key for the figures: T_c is the per-row ENCODE rate over
-    // the full column (training is the separate appendix t_train_ns, not in T_c).
-    r.metrics.emplace_back("t_compress_ns",    static_cast<double>(t_encode_ns));
+    r.metrics.emplace_back("t_sample_prepare_ns",
+                           static_cast<double>(t_sample_prepare_ns));
+    r.metrics.emplace_back("t_model_load_ns",  static_cast<double>(t_model_load_ns));
+    r.metrics.emplace_back("t_pack_ns",        static_cast<double>(t_pack_ns));
+    r.metrics.emplace_back("t_serialize_ns",   static_cast<double>(t_serialize_ns));
+    const uint64_t t_reuse_compress_ns = t_encode_ns + t_pack_ns;
+    const uint64_t t_codec_first_use_ns = t_sample_prepare_ns + t_train_ns
+                                        + t_model_load_ns + t_encode_ns + t_pack_ns;
+    const uint64_t t_first_use_ns = t_codec_first_use_ns + t_serialize_ns;
+    r.metrics.emplace_back("t_reuse_compress_ns",
+                           static_cast<double>(t_reuse_compress_ns));
+    r.metrics.emplace_back("t_codec_first_use_ns",
+                           static_cast<double>(t_codec_first_use_ns));
+    r.metrics.emplace_back("t_first_use_ns",   static_cast<double>(t_first_use_ns));
+    // Uniform throughput key for the tables and figures: like every other
+    // learned codec (FSST, RLZ, Re-Pair, OnPair), T_c covers the whole codec
+    // path from raw column to packed tokens, training included. Encoding with
+    // an already trained model is t_reuse_compress_ns.
+    r.metrics.emplace_back("t_compress_ns",    static_cast<double>(t_codec_first_use_ns));
     r.metrics.emplace_back("sampled_rows",     static_cast<double>(sampled_rows));
     return r;
 }
@@ -543,6 +576,7 @@ struct PieceDict {
     std::vector<uint8_t>  bytes;     // concatenated raw bytes of every piece
                                      // (+ PIECE_OVERCOPY pad bytes at the tail)
     std::vector<uint32_t> offsets;   // size V+1; piece id -> [offsets[id], offsets[id+1])
+    uint32_t max_piece_bytes = 0;
 };
 
 // Build the id->bytes table ONCE from the SentencePiece model (model setup, not
@@ -569,11 +603,114 @@ PieceDict build_piece_dict(const sentencepiece::SentencePieceProcessor& proc,
             bu.to_bytes(proc.IdToPiece(static_cast<int>(id)), d.bytes);  // appends
         }
         d.offsets.push_back(static_cast<uint32_t>(d.bytes.size()));
+        d.max_piece_bytes = std::max(
+            d.max_piece_bytes, d.offsets.back() - d.offsets[d.offsets.size() - 2]);
     }
     // Tail pad so decode_payload's fixed PIECE_OVERCOPY read from the last (or any
     // short) piece never runs past the arena. offsets are unchanged.
     d.bytes.resize(d.bytes.size() + PIECE_OVERCOPY, 0u);
     return d;
+}
+
+// Reorder a decode dictionary lexicographically and return the old-id ->
+// new-id permutation. This diagnostic leaves every token and decoded
+// byte unchanged after applying the same permutation to the token stream, so
+// it isolates the cache-locality effect of dictionary ID order.
+PieceDict lexicographic_piece_dict(const PieceDict& src,
+                                   std::vector<uint32_t>& old_to_new) {
+    const uint32_t V = static_cast<uint32_t>(src.offsets.size() - 1);
+    std::vector<uint32_t> new_to_old(V);
+    std::iota(new_to_old.begin(), new_to_old.end(), 0u);
+    std::sort(new_to_old.begin(), new_to_old.end(), [&](uint32_t a, uint32_t b) {
+        const uint32_t ao = src.offsets[a];
+        const uint32_t bo = src.offsets[b];
+        const uint32_t al = src.offsets[a + 1] - ao;
+        const uint32_t bl = src.offsets[b + 1] - bo;
+        const int cmp = std::memcmp(src.bytes.data() + ao, src.bytes.data() + bo,
+                                    std::min(al, bl));
+        if (cmp != 0) return cmp < 0;
+        if (al != bl) return al < bl;
+        return a < b;
+    });
+
+    PieceDict dst;
+    dst.offsets.reserve(static_cast<size_t>(V) + 1);
+    dst.offsets.push_back(0);
+    old_to_new.resize(V);
+    for (uint32_t new_id = 0; new_id < V; ++new_id) {
+        const uint32_t old_id = new_to_old[new_id];
+        old_to_new[old_id] = new_id;
+        const uint32_t lo = src.offsets[old_id];
+        const uint32_t hi = src.offsets[old_id + 1];
+        dst.bytes.insert(dst.bytes.end(), src.bytes.begin() + lo,
+                         src.bytes.begin() + hi);
+        dst.offsets.push_back(static_cast<uint32_t>(dst.bytes.size()));
+        dst.max_piece_bytes = std::max(dst.max_piece_bytes, hi - lo);
+    }
+    dst.bytes.resize(dst.bytes.size() + PIECE_OVERCOPY, 0u);
+    return dst;
+}
+
+// Sort by descending full-column token occurrence count. Ties use token bytes
+// lexicographically, then the old ID, making the diagnostic deterministic.
+PieceDict frequency_piece_dict(const PieceDict& src, const LoadedWire& wire,
+                               std::vector<uint32_t>& old_to_new) {
+    const uint32_t V = static_cast<uint32_t>(src.offsets.size() - 1);
+    std::vector<uint32_t> tokens;
+    bitpack::unpack_uniform(wire.packed_tokens, bitpack::bits_for_vocab(wire.V),
+                            wire.T, tokens);
+    std::vector<uint64_t> frequency(V, 0);
+    for (uint32_t id : tokens) ++frequency[id];
+
+    std::vector<uint32_t> new_to_old(V);
+    std::iota(new_to_old.begin(), new_to_old.end(), 0u);
+    std::sort(new_to_old.begin(), new_to_old.end(), [&](uint32_t a, uint32_t b) {
+        if (frequency[a] != frequency[b]) return frequency[a] > frequency[b];
+        const uint32_t ao = src.offsets[a];
+        const uint32_t bo = src.offsets[b];
+        const uint32_t al = src.offsets[a + 1] - ao;
+        const uint32_t bl = src.offsets[b + 1] - bo;
+        const int cmp = std::memcmp(src.bytes.data() + ao, src.bytes.data() + bo,
+                                    std::min(al, bl));
+        if (cmp != 0) return cmp < 0;
+        if (al != bl) return al < bl;
+        return a < b;
+    });
+
+    PieceDict dst;
+    dst.offsets.reserve(static_cast<size_t>(V) + 1);
+    dst.offsets.push_back(0);
+    old_to_new.resize(V);
+    for (uint32_t new_id = 0; new_id < V; ++new_id) {
+        const uint32_t old_id = new_to_old[new_id];
+        old_to_new[old_id] = new_id;
+        const uint32_t lo = src.offsets[old_id];
+        const uint32_t hi = src.offsets[old_id + 1];
+        dst.bytes.insert(dst.bytes.end(), src.bytes.begin() + lo,
+                         src.bytes.begin() + hi);
+        dst.offsets.push_back(static_cast<uint32_t>(dst.bytes.size()));
+        dst.max_piece_bytes = std::max(dst.max_piece_bytes, hi - lo);
+    }
+    dst.bytes.resize(dst.bytes.size() + PIECE_OVERCOPY, 0u);
+    return dst;
+}
+
+LoadedWire remap_wire_ids(const LoadedWire& src,
+                          const std::vector<uint32_t>& old_to_new) {
+    std::vector<uint32_t> tokens;
+    bitpack::unpack_uniform(src.packed_tokens, bitpack::bits_for_vocab(src.V),
+                            src.T, tokens);
+    for (uint32_t& id : tokens) id = old_to_new[id];
+
+    LoadedWire dst;
+    dst.N = src.N;
+    dst.V = src.V;
+    dst.T = src.T;
+    dst.decoded_bytes = src.decoded_bytes;
+    dst.tok_offsets = src.tok_offsets;
+    bitpack::pack_uniform(tokens, bitpack::bits_for_vocab(src.V),
+                          dst.packed_tokens);
+    return dst;
 }
 
 // PAYLOAD-ONLY decode kernel — the TIMED region. Unpacks the bit-packed token
@@ -584,7 +721,9 @@ PieceDict build_piece_dict(const sentencepiece::SentencePieceProcessor& proc,
 // NOTHING ELSE — no allocation, no buffer sizing pass, and no per-row string
 // offsets (the offsets are rebuilt UNTIMED by build_offsets() for the round-trip
 // output only, exactly as for onpair/zstd/lz4). Returns total bytes written.
-size_t decode_payload(const LoadedWire& w, const PieceDict& dict, uint8_t* dst) {
+template<bool HasLongPieces>
+size_t decode_payload_impl(const LoadedWire& w, const PieceDict& dict,
+                           uint8_t* dst) {
     const uint8_t*  db  = dict.bytes.data();
     const uint32_t* off = dict.offsets.data();
     size_t cum = 0;
@@ -606,13 +745,15 @@ size_t decode_payload(const LoadedWire& w, const PieceDict& dict, uint8_t* dst) 
         const uint32_t o_   = off[id_]; \
         const uint32_t len_ = off[id_ + 1] - o_; \
         std::memcpy(dst + cum, db + o_, PIECE_OVERCOPY); \
-        if (__builtin_expect(len_ > PIECE_OVERCOPY, 0)) \
-            std::memcpy(dst + cum + PIECE_OVERCOPY, db + o_ + PIECE_OVERCOPY, \
-                        len_ - PIECE_OVERCOPY); \
+        if constexpr (HasLongPieces) { \
+            if (__builtin_expect(len_ > PIECE_OVERCOPY, 0)) \
+                std::memcpy(dst + cum + PIECE_OVERCOPY, \
+                            db + o_ + PIECE_OVERCOPY, len_ - PIECE_OVERCOPY); \
+        } \
         cum += len_; \
     } while (0)
 
-    // FAIRNESS: BPE's bit-unpacking now matches OnPair's library speed instead of
+    // FAIRNESS: BPE's bit-unpacking matches OnPair's library speed instead of
     // riding a slow scalar reader. Byte-aligned widths take a tight typed loop with
     // the output cursor (cum) kept LOCAL (the fastest path; this is what bpe_v65536
     // → B=16 uses for the size-matched comparison vs OnPair bits=16). Sub-byte
@@ -635,6 +776,15 @@ size_t decode_payload(const LoadedWire& w, const PieceDict& dict, uint8_t* dst) 
                             [&](uint32_t id) { BPE_EMIT(id); });
     #undef BPE_EMIT
     return cum;
+}
+
+size_t decode_payload(const LoadedWire& w, const PieceDict& dict, uint8_t* dst) {
+    // SentencePiece defaults max_sentencepiece_length to 16, matching OnPair.
+    // Dispatch once per column so the common case has no impossible per-token
+    // len > 16 branch; retain a correct general path for non-default models.
+    if (dict.max_piece_bytes <= PIECE_OVERCOPY)
+        return decode_payload_impl<false>(w, dict, dst);
+    return decode_payload_impl<true>(w, dict, dst);
 }
 
 // UNTIMED: per-row string offsets from the already-unpacked tokens. Needed only
@@ -713,12 +863,31 @@ OpResult BpeRunner::bulk_decode(const std::string& in_path,
                                  const std::string& out_path,
                                  const std::string& cfg_json) {
     BpeConfig cfg = parse_bpe_config(cfg_json);
+    const std::string decode_variant =
+        extract_str(cfg_json, "decode_variant", "flat");
+    if (decode_variant != "flat"
+        && decode_variant != "flat_lexicographic"
+        && decode_variant != "flat_frequency"
+        && decode_variant != "sentencepiece_rows"
+        && decode_variant != "sentencepiece_column") {
+        return OpResult{.status = "crash",
+                        .notes = "bpe: unknown decode_variant " + decode_variant};
+    }
     set_address_space_cap(cfg.mem_cap_gb * (1ull << 30));
 
     LoadedWire w;
     sentencepiece::SentencePieceProcessor proc;
     Column out;
     uint64_t t_decode_ns = 0;
+    uint32_t model_piece_count = 0;
+    uint32_t max_piece_bytes = 0;
+    uint32_t piece_entries_gt16 = 0;
+    uint64_t used_piece_entries = 0;
+    uint64_t used_piece_content_bytes = 0;
+    uint64_t token_occurrences_gt16 = 0;
+    uint64_t output_bytes_from_gt16 = 0;
+    uint64_t t_unpack_setup_ns = 0;
+    uint64_t t_bytemap_inverse_ns = 0;
     try {
         // UNTIMED: file read + SentencePiece model load. Deserialising and
         // building the BPE model is one-time setup, not decode work — excluded
@@ -731,35 +900,132 @@ OpResult BpeRunner::bulk_decode(const std::string& in_path,
         auto st = proc.LoadFromSerializedProto(blob);
         if (!st.ok()) {
             OpResult r; r.status = "crash";
-            r.notes = std::string("LoadFromSerializedProto: ") + st.message();
+            r.notes = std::string("LoadFromSerializedProto: ") + std::string(st.message());
             return r;
         }
         // UNTIMED: derive the id->bytes decode table from the model (one-time
         // model setup; the analogue of OnPair loading its dictionary from the
         // wire). Excluded from the timer like every other baseline's model load.
-        const PieceDict dict = build_piece_dict(proc, w.V);
+        PieceDict dict = build_piece_dict(proc, w.V);
+        LoadedWire remapped_w;
+        const LoadedWire* decode_wire = &w;
+        if (decode_variant == "flat_lexicographic") {
+            std::vector<uint32_t> old_to_new;
+            dict = lexicographic_piece_dict(dict, old_to_new);
+            remapped_w = remap_wire_ids(w, old_to_new);
+            decode_wire = &remapped_w;
+        } else if (decode_variant == "flat_frequency") {
+            std::vector<uint32_t> old_to_new;
+            dict = frequency_piece_dict(dict, w, old_to_new);
+            remapped_w = remap_wire_ids(w, old_to_new);
+            decode_wire = &remapped_w;
+        }
+        model_piece_count = static_cast<uint32_t>(proc.GetPieceSize());
+        for (uint32_t id = 0; id < w.V; ++id) {
+            const uint32_t len = dict.offsets[id + 1] - dict.offsets[id];
+            max_piece_bytes = std::max(max_piece_bytes, len);
+            if (len > PIECE_OVERCOPY) ++piece_entries_gt16;
+        }
         // UNTIMED: pre-allocate the output payload buffer (EXACT decoded size from
         // the wire + over-copy slack). resize() value-inits here so pages are
         // resident before the timed region (no first-touch faults), and the timer
         // excludes allocation + buffer sizing entirely.
         out.bytes.resize(static_cast<size_t>(w.decoded_bytes) + PIECE_OVERCOPY);
-        // TIMED: FUSED token bit-unpack + dictionary byte concatenation ONLY — the
-        // decode kernel. No allocation, no sizing pass, no intermediate token
-        // array, no per-row string offsets (built UNTIMED below for the round-trip
-        // output), matching the uniform payload-only decode-timer contract used by
-        // onpair/zstd/lz4.
-        const auto t0 = std::chrono::steady_clock::now();
-        const size_t total = decode_payload(w, dict, out.bytes.data());
-        t_decode_ns = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now() - t0).count());
+        size_t total = 0;
+        if (decode_variant == "sentencepiece_rows"
+            || decode_variant == "sentencepiece_column") {
+            // Diagnostic reference paths, not the headline timing contract.
+            // SentencePiece exposes a detokenizer rather than a packed-column
+            // decompressor. Unpack ids OUTSIDE the timer. The row variant calls
+            // public Decode(ids, string*) once per stored row; the column variant
+            // makes one optimistic call over all ids (valid under our identity /
+            // no-dummy-prefix configuration). Both exclude initial bit-unpacking.
+            std::vector<uint32_t> all_ids_u32;
+            const auto tu0 = std::chrono::steady_clock::now();
+            bitpack::unpack_uniform(w.packed_tokens,
+                                    bitpack::bits_for_vocab(w.V), w.T,
+                                    all_ids_u32);
+            t_unpack_setup_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - tu0).count());
+
+            std::string mapped_all;
+            mapped_all.reserve(static_cast<size_t>(w.decoded_bytes) * 2);
+            std::vector<int> all_ids;
+            if (decode_variant == "sentencepiece_column")
+                all_ids.assign(all_ids_u32.begin(), all_ids_u32.end());
+            const auto t0 = std::chrono::steady_clock::now();
+            if (decode_variant == "sentencepiece_rows") {
+                size_t max_row_tokens = 0;
+                for (uint32_t i = 0; i < w.N; ++i)
+                    max_row_tokens = std::max<size_t>(
+                        max_row_tokens,
+                        w.tok_offsets[i + 1] - w.tok_offsets[i]);
+                std::vector<int> row_ids;
+                row_ids.reserve(max_row_tokens);
+                std::string mapped_row;
+                for (uint32_t i = 0; i < w.N; ++i) {
+                    const uint32_t lo = w.tok_offsets[i];
+                    const uint32_t hi = w.tok_offsets[i + 1];
+                    row_ids.assign(all_ids_u32.begin() + lo,
+                                   all_ids_u32.begin() + hi);
+                    auto st_decode = proc.Decode(row_ids, &mapped_row);
+                    if (!st_decode.ok())
+                        throw std::runtime_error(
+                            std::string("SentencePiece Decode failed: ")
+                            + std::string(st_decode.message()));
+                    mapped_all.append(mapped_row);
+                }
+            } else {
+                auto st_decode = proc.Decode(all_ids, &mapped_all);
+                if (!st_decode.ok())
+                    throw std::runtime_error(
+                        std::string("SentencePiece Decode failed: ")
+                        + std::string(st_decode.message()));
+            }
+            t_decode_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - t0).count());
+
+            // Recovering the original byte column requires inversion of our
+            // byte<->Unicode adaptation. Report it separately from native API
+            // detokenization so the two implementation effects remain distinct.
+            out.bytes.clear();
+            const auto tb0 = std::chrono::steady_clock::now();
+            byte_unicode().to_bytes(mapped_all, out.bytes);
+            t_bytemap_inverse_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - tb0).count());
+            total = out.bytes.size();
+        } else {
+            // TIMED: fused token bit-unpack + flat dictionary concatenation.
+            const auto t0 = std::chrono::steady_clock::now();
+            total = decode_payload(*decode_wire, dict, out.bytes.data());
+            t_decode_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - t0).count());
+        }
         // UNTIMED: shrink to the true size + rebuild per-row offsets for output
         // (re-unpack the tokens off the timed path).
         out.bytes.resize(total);
         std::vector<uint32_t> all_tokens;
-        bitpack::unpack_uniform(w.packed_tokens, bitpack::bits_for_vocab(w.V),
+        bitpack::unpack_uniform(decode_wire->packed_tokens,
+                                bitpack::bits_for_vocab(decode_wire->V),
                                 w.T, all_tokens);
-        build_offsets(w, all_tokens, dict, out.offsets);
+        std::vector<uint8_t> used(w.V, 0);
+        for (uint32_t id : all_tokens) {
+            const uint32_t len = dict.offsets[id + 1] - dict.offsets[id];
+            if (!used[id]) {
+                used[id] = 1;
+                ++used_piece_entries;
+                used_piece_content_bytes += len;
+            }
+            if (len > PIECE_OVERCOPY) {
+                ++token_occurrences_gt16;
+                output_bytes_from_gt16 += len;
+            }
+        }
+        build_offsets(*decode_wire, all_tokens, dict, out.offsets);
     } catch (const std::bad_alloc&) {
         OpResult r; r.status = "oom"; r.notes = "bad_alloc in bulk_decode"; return r;
     }
@@ -769,6 +1035,25 @@ OpResult BpeRunner::bulk_decode(const std::string& in_path,
     r.metrics.emplace_back("output_bytes", static_cast<double>(out.bytes.size()));
     r.metrics.emplace_back("num_rows",     static_cast<double>(out.num_rows()));
     r.metrics.emplace_back("t_decode_ns",  static_cast<double>(t_decode_ns));
+    r.metrics.emplace_back("t_unpack_setup_ns",
+                           static_cast<double>(t_unpack_setup_ns));
+    r.metrics.emplace_back("t_bytemap_inverse_ns",
+                           static_cast<double>(t_bytemap_inverse_ns));
+    r.metrics.emplace_back("id_space", static_cast<double>(w.V));
+    r.metrics.emplace_back("model_piece_count",
+                           static_cast<double>(model_piece_count));
+    r.metrics.emplace_back("token_count", static_cast<double>(w.T));
+    r.metrics.emplace_back("max_piece_bytes", static_cast<double>(max_piece_bytes));
+    r.metrics.emplace_back("piece_entries_gt16",
+                           static_cast<double>(piece_entries_gt16));
+    r.metrics.emplace_back("used_piece_entries",
+                           static_cast<double>(used_piece_entries));
+    r.metrics.emplace_back("used_piece_content_bytes",
+                           static_cast<double>(used_piece_content_bytes));
+    r.metrics.emplace_back("token_occurrences_gt16",
+                           static_cast<double>(token_occurrences_gt16));
+    r.metrics.emplace_back("output_bytes_from_gt16",
+                           static_cast<double>(output_bytes_from_gt16));
     return r;
 }
 
@@ -788,7 +1073,7 @@ OpResult BpeRunner::random_decode(const std::string& in_path,
         auto st = proc.LoadFromSerializedProto(blob);
         if (!st.ok()) {
             OpResult r; r.status = "crash";
-            r.notes = std::string("LoadFromSerializedProto: ") + st.message();
+            r.notes = std::string("LoadFromSerializedProto: ") + std::string(st.message());
             return r;
         }
     } catch (const std::bad_alloc&) {
@@ -849,7 +1134,7 @@ OpResult BpeRunner::prefix_search(const std::string& in_path,
         auto st = proc.LoadFromSerializedProto(blob);
         if (!st.ok()) {
             OpResult r; r.status = "crash";
-            r.notes = std::string("LoadFromSerializedProto: ") + st.message();
+            r.notes = std::string("LoadFromSerializedProto: ") + std::string(st.message());
             return r;
         }
     } catch (const std::bad_alloc&) {
@@ -860,7 +1145,7 @@ OpResult BpeRunner::prefix_search(const std::string& in_path,
     uint64_t t_scan_ns = 0;
     std::vector<uint32_t> hits;
     try {
-        // UNTIMED: id->bytes table (model setup). FAIR PREFIX SCAN (W-7): BPE is
+        // UNTIMED: id->bytes table (model setup). PREFIX SCAN: BPE is
         // per-string, so decode only ~|needle| bytes of EACH row (decode_row_into
         // stops at `want`) and test the prefix — not the whole column.
         const PieceDict dict = build_piece_dict(proc, w.V);
@@ -879,7 +1164,7 @@ OpResult BpeRunner::prefix_search(const std::string& in_path,
     }
 
     // UNTIMED: write the hit list ([n_hits u32][hits u32]) — same wire as the shared
-    // decompress_then_scan path, so the G6 bit-equality gate is unchanged.
+    // decompress_then_scan path, so the prefix-search check is unchanged.
     std::ofstream f(out_path, std::ios::binary);
     if (!f) throw std::runtime_error("bpe: cannot open out_path " + out_path);
     uint32_t nh = static_cast<uint32_t>(n_hits);
@@ -895,11 +1180,12 @@ OpResult BpeRunner::prefix_search(const std::string& in_path,
     return r;
 }
 
-// Random-access latency — PER-STRING (§8.4). BPE decodes ONLY row i's token run
+// Random-access latency — PER-STRING (Section VIII-B4). BPE decodes ONLY row i's token run
 // (extracted at its bit offset; O(|s_i|)), against the resident id->bytes table —
-// the same per-string class as FSST/OnPair, so its L_ra is skew/layout-insensitive.
+// the same per-string class as FSST/OnPair.
 // Model load + dict build + buffer sizing are one-time setup OUTSIDE the timed loop;
-// no file I/O in the loop. Refuses cleanly off the controlled x86 rig.
+// no file I/O in the loop. Returns refused-env unless on x86-64 with an
+// invariant TSC.
 OpResult BpeRunner::ra_latency(const std::string& in_path,
                                const std::string& /*out_path*/,
                                const std::string& cfg_json) {
@@ -916,7 +1202,7 @@ OpResult BpeRunner::ra_latency(const std::string& in_path,
         auto st = proc.LoadFromSerializedProto(blob);
         if (!st.ok())
             return OpResult{.status = "crash",
-                            .notes  = std::string("LoadFromSerializedProto: ") + st.message()};
+                            .notes  = std::string("LoadFromSerializedProto: ") + std::string(st.message())};
         const PieceDict dict = build_piece_dict(proc, w.V);   // model setup (untimed)
 
         uint64_t n_samples = extract_u64(cfg_json, "n_samples", 1000000);

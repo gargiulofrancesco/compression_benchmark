@@ -1,8 +1,8 @@
 # Vendored lz4 v1.10.0 lib/ subset → liblz4_static.a.
-# Sidesteps upstream's CMake to control flags per Phase 2 LZ4 fairness card.
+# Sidesteps upstream's CMake to control the flags (docs/benchmark/fairness/lz4.md).
 # Single-thread fairness: LZ4 has no MT codepath in lib/ (MT lives only in
 # programs/lz4.c upstream, which we never vendor). LZ4F (lz4frame.c) is linked
-# but UNUSED in the headline path per Q-L3 (block API only).
+# but unused: the runner calls the block API only.
 
 file(GLOB LZ4_SRC CONFIGURE_DEPENDS "lib/*.c")
 

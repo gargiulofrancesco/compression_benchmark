@@ -12,22 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.!
 
-if (SPM_ABSL_PROVIDER STREQUAL "module" OR SPM_ABSL_PROVIDER STREQUAL "package")
-  set(ABSL_FLAGS_SRCS "")
-  set(ABSL_STRINGS_SRCS "")
-  list(APPEND SPM_LIBS absl::strings)
-  list(APPEND SPM_LIBS absl::flags)
-  list(APPEND SPM_LIBS absl::flags_parse)
-  list(APPEND SPM_LIBS absl::log)
-  list(APPEND SPM_LIBS absl::check)
-  if (MSVC)
-   add_definitions("/D_USE_EXTERNAL_ABSL")
-  else()
-   add_definitions("-D_USE_EXTERNAL_ABSL")
-  endif()
-elseif (SPM_ABSL_PROVIDER STREQUAL "internal")
-  set(ABSL_FLAGS_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/absl/flags/flag.cc)
-endif()
+list(APPEND SPM_LIBS absl::status)
+list(APPEND SPM_LIBS absl::status_builder)
+list(APPEND SPM_LIBS absl::strings)
+list(APPEND SPM_LIBS absl::flags)
+list(APPEND SPM_LIBS absl::flags_parse)
+list(APPEND SPM_LIBS absl::log)
+list(APPEND SPM_LIBS absl::log_initialize)
+list(APPEND SPM_LIBS absl::check)
+list(APPEND SPM_LIBS absl::random_random)
+list(APPEND SPM_LIBS absl::time)
 
 if (SPM_PROTOBUF_PROVIDER STREQUAL "internal")
   set(SPM_PROTO_HDRS builtin_pb/sentencepiece.pb.h)
@@ -64,6 +58,9 @@ if (SPM_PROTOBUF_PROVIDER STREQUAL "internal")
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/protobuf-lite/zero_copy_stream_impl_lite.cc)
   if (MSVC)
     add_definitions("/DHAVE_PTHREAD /wd4018 /wd4514")
+  elseif (WIN32)
+    # Windows but not cl.exe (e.g. Clang targeting *-pc-windows-msvc, MinGW).
+    add_definitions("-DHAVE_PTHREAD=1 -Wno-sign-compare -Wno-deprecated-declarations")
   else()
     add_definitions("-pthread -DHAVE_PTHREAD=1 -Wno-sign-compare -Wno-deprecated-declarations")
   endif()
@@ -76,21 +73,11 @@ elseif (SPM_PROTOBUF_PROVIDER STREQUAL "package")
   protobuf_generate_cpp(SPM_MODEL_PROTO_SRCS SPM_MODEL_PROTO_HDRS sentencepiece_model.proto)
   set(PROTOBUF_LITE_SRCS "")
   include_directories(${PROTOBUF_INCLUDE_DIR})
-  if (MSVC)
-    add_definitions("/D_USE_EXTERNAL_PROTOBUF")
-  else()
-    add_definitions("-D_USE_EXTERNAL_PROTOBUF")
-  endif()
+  add_compile_definitions(_USE_EXTERNAL_PROTOBUF)
 endif()
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../third_party)
-
-if (MSVC)
-  add_definitions("/D_USE_INTERNAL_STRING_VIEW")
-else()
-  add_definitions("-D_USE_INTERNAL_STRING_VIEW")
-endif()
 
 set(SPM_SRCS
   ${PROTOBUF_LITE_SRCS}
@@ -114,17 +101,15 @@ set(SPM_SRCS
   unigram_model.h
   bpe_model.cc
   char_model.cc
-  error.cc
   filesystem.cc
+  init.cc
   model_factory.cc
   model_interface.cc
   normalizer.cc
   sentencepiece_processor.cc
   unigram_model.cc
   util.cc
-  word_model.cc
-  ${ABSL_STRINGS_SRCS}
-  ${ABSL_FLAGS_SRCS})
+  word_model.cc)
 
 set(SPM_TRAIN_SRCS
   ${SPM_PROTO_HDRS}
@@ -159,14 +144,15 @@ set(SPM_TEST_SRCS
   bpe_model_test.cc
   bpe_model_trainer_test.cc
   builder_test.cc
+  invalid_model_test.cc
   char_model_test.cc
   char_model_trainer_test.cc
   filesystem_test.cc
-  init_test.cc
   model_factory_test.cc
   model_interface_test.cc
   normalizer_test.cc
   sentencepiece_processor_test.cc
+  sentencepiece_processor_parallel_test.cc
   sentencepiece_trainer_test.cc
   test_main.cc
   testharness.cc
@@ -180,6 +166,15 @@ set(SPM_TEST_SRCS
   word_model_trainer_test.cc
   pretokenizer_for_training_test.cc)
 
+if (SPM_NLCODEC_BPE)
+  set(NLCODEC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../contrib/nlcodec)
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+  add_compile_definitions(SPM_NLCODEC_BPE)
+  list(APPEND SPM_TRAIN_SRCS ${NLCODEC_DIR}/bpe_model_trainer_nlcodec.cc)
+  list(APPEND SPM_TEST_SRCS ${NLCODEC_DIR}/bpe_model_trainer_nlcodec_test.cc)
+endif()
+
 find_package(Threads REQUIRED)
 
 list(APPEND SPM_LIBS ${PROTOBUF_LITE_LIBRARY} Threads::Threads)
@@ -187,8 +182,12 @@ list(APPEND SPM_LIBS ${PROTOBUF_LITE_LIBRARY} Threads::Threads)
 if (SPM_ENABLE_NFKC_COMPILE)
   find_package(ICU 4.4 COMPONENTS i18n data uc REQUIRED)
   include_directories(${ICU_INCLUDE_DIRS})
-  add_definitions(-DENABLE_NFKC_COMPILE)
+  add_compile_definitions(ENABLE_NFKC_COMPILE)
   list(APPEND SPM_LIBS ICU::i18n ICU::data ICU::uc)
+endif()
+
+if (SPM_DISABLE_EMBEDDED_DATA)
+  add_compile_definitions(DISABLE_EMBEDDED_DATA)
 endif()
 
 if (SPM_ENABLE_TCMALLOC)
@@ -225,8 +224,8 @@ if (SPM_ENABLE_SHARED)
   add_library(sentencepiece SHARED ${SPM_SRCS})
   add_library(sentencepiece_train SHARED ${SPM_TRAIN_SRCS})
   if (ANDROID)
-    target_link_libraries(sentencepiece log)
-    target_link_libraries(sentencepiece_train log)
+    target_link_libraries(sentencepiece PRIVATE log)
+    target_link_libraries(sentencepiece_train PRIVATE log)
   endif()
 endif()
 
@@ -237,8 +236,8 @@ target_link_libraries(sentencepiece-static INTERFACE ${SPM_LIBS})
 target_link_libraries(sentencepiece_train-static INTERFACE sentencepiece-static ${SPM_LIBS})
 
 if (SPM_ENABLE_SHARED)
-  target_link_libraries(sentencepiece ${SPM_LIBS})
-  target_link_libraries(sentencepiece_train ${SPM_LIBS} sentencepiece)
+  target_link_libraries(sentencepiece PUBLIC ${SPM_LIBS})
+  target_link_libraries(sentencepiece_train PUBLIC ${SPM_LIBS} sentencepiece)
   set(SPM_INSTALLTARGETS sentencepiece sentencepiece_train sentencepiece-static sentencepiece_train-static)
   set_target_properties(sentencepiece sentencepiece_train PROPERTIES SOVERSION 0 VERSION 0.0.0)
   set_target_properties(sentencepiece PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS YES)
@@ -259,19 +258,8 @@ endif()
 set_target_properties(sentencepiece-static PROPERTIES OUTPUT_NAME "sentencepiece")
 set_target_properties(sentencepiece_train-static PROPERTIES OUTPUT_NAME "sentencepiece_train")
 
-if (NOT MSVC)
-  if (SPM_COVERAGE)
-    set(CMAKE_CXX_FLAGS "-O0 -Wall -fPIC -coverage ${CMAKE_CXX_FLAGS}")
-  else()
-    set(CMAKE_CXX_FLAGS "-O3 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
-  endif()
-  if (SPM_ENABLE_TENSORFLOW_SHARED)
-    add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
-  endif()
-  if (SPM_NO_THREADLOCAL)
-    add_definitions(-DSPM_NO_THREADLOCAL=1)
-    add_definitions(-DGOOGLE_PROTOBUF_NO_THREADLOCAL=1)
-  endif()
+if (NOT WIN32)
+  set(CMAKE_CXX_FLAGS "-O3 -Wall -fPIC ${CMAKE_CXX_FLAGS}")
   set_source_files_properties(
     sentencepiece.pb.cc sentencepiece_model.pb.cc
     PROPERTIES COMPILE_FLAGS "-Wno-misleading-indentation")
@@ -316,41 +304,59 @@ install(TARGETS ${SPM_INSTALLTARGETS}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
-install(FILES sentencepiece_trainer.h sentencepiece_processor.h
-  DESTINATION ${CMAKE_INSTALL_INCDIR})
+# Generate modified headers for installation
+set(GENERATED_HEADERS_DIR "${CMAKE_CURRENT_BINARY_DIR}/installed_headers")
+set(MODIFIER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/modify_headers.cmake")
+
+add_custom_command(
+  OUTPUT "${GENERATED_HEADERS_DIR}/sentencepiece_processor.h"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sentencepiece_processor.h" "${MODIFIER_SCRIPT}"
+  COMMAND ${CMAKE_COMMAND} -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/sentencepiece_processor.h"
+                           -DOUTPUT_FILE="${GENERATED_HEADERS_DIR}/sentencepiece_processor.h"
+                           -P "${MODIFIER_SCRIPT}"
+  COMMENT "Generating modified sentencepiece_processor.h for installation"
+)
+
+add_custom_command(
+  OUTPUT "${GENERATED_HEADERS_DIR}/sentencepiece_trainer.h"
+  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sentencepiece_trainer.h" "${MODIFIER_SCRIPT}"
+  COMMAND ${CMAKE_COMMAND} -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/sentencepiece_trainer.h"
+                           -DOUTPUT_FILE="${GENERATED_HEADERS_DIR}/sentencepiece_trainer.h"
+                           -P "${MODIFIER_SCRIPT}"
+  COMMENT "Generating modified sentencepiece_trainer.h for installation"
+)
+
+add_custom_target(generate_installed_headers ALL
+  DEPENDS "${GENERATED_HEADERS_DIR}/sentencepiece_processor.h"
+          "${GENERATED_HEADERS_DIR}/sentencepiece_trainer.h"
+)
+
+install(FILES "${GENERATED_HEADERS_DIR}/sentencepiece_trainer.h" "${GENERATED_HEADERS_DIR}/sentencepiece_processor.h"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if (NOT SPM_PROTOBUF_PROVIDER STREQUAL "internal")
-  install(FILES ${SPM_PROTO_HDRS} DESTINATION ${CMAKE_INSTALL_INCDIR})
+  install(FILES ${SPM_PROTO_HDRS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
 
 file(TO_NATIVE_PATH "${PROJECT_SOURCE_DIR}/data" data_dir)
 
-if (SPM_BUILD_TEST OR SPM_COVERAGE)
+if (SPM_BUILD_TEST)
   enable_testing()
   add_executable(spm_test test_main.cc ${SPM_TEST_SRCS})
 
-  if (SPM_COVERAGE)
-    target_link_libraries(spm_test sentencepiece sentencepiece_train "-lgcov")
-  else()
-    target_link_libraries(spm_test sentencepiece sentencepiece_train)
-  endif()
+  target_link_libraries(spm_test sentencepiece sentencepiece_train)
 
   set(MEMORYCHECK_COMMAND_OPTIONS "--leak-check=full --show-leak-kinds=definite,possible --error-exitcode=1")
   find_program(CTEST_MEMORYCHECK_COMMAND NAMES valgrind)
-  include(Dart)
 
   add_test(NAME sentencepiece_test
     COMMAND $<TARGET_FILE:spm_test> --test_srcdir=${data_dir})
 endif()
 
-if (SPM_COVERAGE)
-  add_custom_target(coverage
-    COMMAND mkdir -p coverage
-    COMMAND $<TARGET_FILE:spm_test> --test_srcdir=${data_dir}
-    COMMAND lcov -c -d . -o coverage.info
-    COMMAND lcov --remove coverage.info "include*" "/c++" "_test*" "testharness*" "third_party*" ".pb.*" -o coverage.info
-    COMMAND mkdir -p lcov_html
-    COMMAND genhtml -o lcov_html coverage.info)
-  add_dependencies(coverage spm_test)
+if (SPM_ENABLE_BENCHMARK)
+  add_executable(sentencepiece_processor_benchmarks_test
+        sentencepiece_processor_benchmarks_test.cc testharness.cc)
+  target_link_libraries(sentencepiece_processor_benchmarks_test
+        sentencepiece sentencepiece_train benchmark::benchmark)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")

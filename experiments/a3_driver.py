@@ -1,4 +1,4 @@
-"""step 3 — A3 ablation driver (sample_fraction sweep).
+"""A3 ablation driver (sample_fraction sweep; Fig. 6, right).
 
 Drives the OnPair runner via the standard NDJSON protocol with the
 `op="held_out_compress"` envelope in its single-strategy mode
@@ -8,9 +8,9 @@ dictionary on the train split and encodes the held-out split with it; writes
 one row to build/a3_results.sqlite per schema/a3_results.sql.
 
 Modes:
-  --smoke         : single cell against the committed V-D fixture; splits
+  --smoke         : single cell against the committed synthetic fixture; splits
                     inline via orchestrator.heldout.split_heldout. <1 sec.
-  default         : full headline grid against datasets/materialized/<dataset>/
+  default         : full grid against datasets/materialized/<dataset>/
                     train/heldout column files (produced by `make datasets`).
 
 Mirrors experiments/a1_driver.py; A3 owns its own a3_results.sqlite store and
@@ -199,7 +199,7 @@ def _flags_sha(default: str) -> str:
 
 
 def _run_smoke(runner_path: Path, db_path: Path) -> int:
-    """Single-cell A3 smoke: f=0.30 × V-D fixture; inline 800/200 split."""
+    """Single-cell A3 smoke: f=0.30 × synthetic fixture; inline 800/200 split."""
     from orchestrator.heldout import split_heldout
 
     cells_yaml = REPO_ROOT / "experiments" / "a3_cells.yaml"

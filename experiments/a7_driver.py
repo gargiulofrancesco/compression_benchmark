@@ -1,4 +1,4 @@
-"""step 8 — A7 ablation driver (shuffle-seed sensitivity sweep).
+"""A7 ablation driver (shuffle-seed sensitivity sweep; Section VIII-C).
 
 Drives the OnPair runner via the standard NDJSON protocol. For each
 (dataset, column, seed) cell in experiments/a7_cells.yaml, compresses the FULL
@@ -6,15 +6,15 @@ materialised column with everything held at the headline (bits=16,
 DynamicThreshold{0.15}) and ONLY the training shuffle seed varying; writes one
 row to build/a7_results.sqlite per schema/a7_results.sql.
 
-Like A2, A7 adds NO new runner op and NO upstream OnPair change: the `seed`
+Like A2, A7 needs NO dedicated runner op and NO upstream OnPair change: the `seed`
 cfg knob already exists (parse_onpair_config, default 42), so the driver reuses
 the existing `compress` op and reads its sub-counters for R. Unlike A2, A7 is
-compress-only (no bulk_decode) because its single y-axis is R — there is no
-T_d in the A7 plan row.
+compress-only (no bulk_decode) because its single y-axis is R; it reports no
+T_d.
 
 Modes:
   --smoke         : single cell (seed=7, a non-default) against the committed
-                    V-D fixture, used whole (no split). <1 sec.
+                    synthetic fixture, used whole (no split). <1 sec.
   default         : full grid against datasets/materialized/<dataset>/<col>.col
                     full-column files (produced by `make datasets`).
 
@@ -201,7 +201,7 @@ def _flags_sha(default: str) -> str:
 
 
 def _run_smoke(runner_path: Path, db_path: Path) -> int:
-    """Single-cell A7 smoke: seed=7 (non-default) × V-D fixture, used whole."""
+    """Single-cell A7 smoke: seed=7 (non-default) × synthetic fixture, used whole."""
     cells_yaml = REPO_ROOT / "experiments" / "a7_cells.yaml"
     cfg = yaml.safe_load(cells_yaml.read_text())
     smoke = cfg["smoke"]

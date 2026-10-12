@@ -119,6 +119,13 @@ static bool columns_equal(const Column& a, const Column& b) {
     return a.bytes == b.bytes && a.offsets == b.offsets;
 }
 
+static double metric(const OpResult& result, const std::string& name) {
+    for (const auto& [key, value] : result.metrics)
+        if (key == name) return value;
+    std::cerr << "[bpe_roundtrip] missing metric " << name << "\n";
+    return -1.0;
+}
+
 static int roundtrip_one(const std::string& label, const Column& original) {
     namespace fs = std::filesystem;
     fs::path tmp = fs::temp_directory_path() / ("onpair_bpe_rt_" + label);
@@ -134,6 +141,20 @@ static int roundtrip_one(const std::string& label, const Column& original) {
     if (c_res.status != "ok") {
         std::cerr << "[bpe_roundtrip] compress " << label
                   << " status=" << c_res.status << " notes=" << c_res.notes << "\n";
+        return 1;
+    }
+
+    const double reuse = metric(c_res, "t_encode_ns") + metric(c_res, "t_pack_ns");
+    const double codec_first = metric(c_res, "t_sample_prepare_ns")
+        + metric(c_res, "t_train_ns") + metric(c_res, "t_model_load_ns")
+        + metric(c_res, "t_encode_ns") + metric(c_res, "t_pack_ns");
+    const double first = codec_first + metric(c_res, "t_serialize_ns");
+    if (metric(c_res, "t_reuse_compress_ns") != reuse
+        || metric(c_res, "t_codec_first_use_ns") != codec_first
+        || metric(c_res, "t_compress_ns") != codec_first
+        || metric(c_res, "t_first_use_ns") != first) {
+        std::cerr << "[bpe_roundtrip] " << label
+                  << ": phase timing identity failed\n";
         return 1;
     }
 

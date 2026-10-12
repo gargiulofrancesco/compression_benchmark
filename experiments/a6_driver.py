@@ -1,5 +1,5 @@
-"""step 7 — A6 ablation driver (query-distribution sweep vs random-access
-latency).
+"""A6 ablation driver (query-distribution sweep vs random-access
+latency; Section VIII-E).
 
 Drives the A6 roster — block-based zstd/lz4 + per-string-native fsst/onpair — via
 the standard NDJSON protocol. For each (baseline, dataset, column,
@@ -22,14 +22,16 @@ case) and scramble (hot set scattered; YCSB-realistic). Uniform is
 layout-invariant → identity only. See schema/a6_results.sql for the full note.
 
 cache_state ∈ {warm, cold} maps to the op's `warmup` flag (warm → one in-process
-decode pre-pass before timing; cold → none). True FS-cache-cold (drop OS page
-cache) is a measurement-rig concern of the `make a6` wrapper, not the op.
+decode pre-pass before timing; cold → none). A true FS-cache-cold run (drop the
+OS page cache between cells) is up to whoever runs `make a6`; the op does not
+do it.
 
 Modes:
-  --smoke   : zstd + fsst + onpair against the committed V-D fixture under
+  --smoke   : zstd + fsst + onpair against the committed synthetic fixture under
               Zipf(1.0) × {identity, scramble}, warm, n_samples=2000. <1 sec.
   default   : full grid against datasets/materialized/<dataset>/<col>.col
-              (produced by `make datasets`). Measurement rig only.
+              (produced by `make datasets`). Latencies need x86-64 with an
+              invariant TSC (refused-env otherwise).
 
 A6 owns its own a6_results.sqlite store and never touches the headline
 results.sqlite or a1..a5_results.sqlite.
@@ -315,7 +317,7 @@ def _dist_layout_combos(distributions, layouts):
 
 
 def _run_smoke(build_root: Path, db_path: Path) -> int:
-    """zstd + fsst + onpair against the V-D fixture, Zipf(1.0) × {identity,
+    """zstd + fsst + onpair against the synthetic fixture, Zipf(1.0) × {identity,
     scramble}, warm. Block budget tiny so zstd splits into many blocks."""
     cells_yaml = REPO_ROOT / "experiments" / "a6_cells.yaml"
     cfg = yaml.safe_load(cells_yaml.read_text())

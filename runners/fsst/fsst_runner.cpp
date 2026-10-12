@@ -1,5 +1,5 @@
 // FsstRunner implementation. See fsst_runner.h for class shape.
-// Wire format on disk (native column-aware layout per FSST card §"Framing"):
+// Wire format on disk (see docs/benchmark/fairness/fsst.md, "Wire format"):
 //   [H u32][header[H]][N u32][compressed_offsets[N+1] u32]
 //   [decoded_offsets[N+1] u32][codewords[Σ Lc_i] u8]
 // Bit-tight identity: dict_bytes + tokens_bytes + boundaries_bytes ≡ output_bytes.
@@ -119,8 +119,8 @@ inline void fsst_prealloc(const FsstWire& w, Column& out) {
 // entire blob yields exactly the concatenation of the per-row decodes — the payload
 // byte sequence, with NO offsets touched in the timed region. The per-row output
 // boundaries are already set by fsst_prealloc from the wire (UNTIMED), exactly like
-// zstd/lz4/onpair. This replaced an N-call per-row decode whose per-call overhead
-// capped throughput at ~1.9 GiB/s.
+// zstd/lz4/onpair. An N-call per-row decode would cap throughput at ~1.9 GiB/s
+// through its per-call overhead.
 void decode_all_into(const FsstWire& w, Column& out) {
     fsst_decoder_t decoder;
     unsigned int consumed = fsst_import(&decoder,
@@ -268,7 +268,8 @@ OpResult FsstRunner::compress(const std::string& in_path,
     // FSST writes codewords contiguously, so we can copy [strOut[0], strOut[0] + tokens_bytes).
     const unsigned char* codewords_src = (N > 0) ? strOut[0] : output_buf.data();
 
-    // Write wire: [H u32][header[H]][N u32][compressed_offsets[N+1]][codewords]
+    // Write wire: [H u32][header[H]][N u32][compressed_offsets[N+1]]
+    //             [decoded_offsets[N+1]][codewords]
     std::ofstream f(out_path, std::ios::binary);
     if (!f) throw std::runtime_error("fsst: cannot open out_path " + out_path);
     uint32_t H_u32 = static_cast<uint32_t>(H);
@@ -361,12 +362,11 @@ OpResult FsstRunner::random_decode(const std::string& in_path,
     return r;
 }
 
-// step 7 (A6). Times n_samples random-access decodes drawn from a query
+// Times n_samples random-access decodes drawn from a query
 // distribution + layout (runners/core/query_sampler.h). FSST decodes each row
 // independently against the shared symbol table — O(|s_i|), position-independent
-// — so its L_ra is flat under skew/scramble, the per-string-class evidence that
-// OnPair's skew-insensitivity is a property of the per-string family, not a
-// special OnPair claim. The decoder is imported once and the decode buffer sized
+// — so A6 can show that OnPair's behaviour under skew is a property of the
+// per-string family, not of OnPair alone. The decoder is imported once and the decode buffer sized
 // once (widest row), both outside the timed loop, so timing isolates the decode.
 OpResult FsstRunner::ra_latency(const std::string& in_path,
                                 const std::string& /*out_path*/,
@@ -405,10 +405,9 @@ OpResult FsstRunner::ra_latency(const std::string& in_path,
         const std::vector<uint64_t> indices =
             generate_query_indices(qspec, n_samples, w.N, seed);
 
-        // Batched timing (latency_stats.h); identical primitive to OnPair. The
-        // access decodes one row and returns its LAST byte, so the accumulated,
-        // barrier'd value forces the full per-string decode (anti-DCE) and K is
-        // auto-tuned to the clock.
+        // Per-access rdtscp timing (ra_timer_tsc.h); identical primitive to
+        // OnPair. The access decodes one row and returns its LAST byte, so the
+        // accumulated, barrier'd value forces the full per-string decode (anti-DCE).
         RaLatencyResult m;
         std::string ra_reason;
         if (!ra_measure_shipping(indices,
@@ -459,7 +458,7 @@ OpResult FsstRunner::prefix_search(const std::string& in_path,
         throw std::runtime_error("fsst: fsst_import returned 0 (corrupt header)");
     const unsigned char* cw = w.codewords.data();
 
-    // FAIR PREFIX SCAN (W-7): FSST is per-string, so we decode only ~|needle| bytes
+    // PREFIX SCAN: FSST is per-string, so we decode only ~|needle| bytes
     // of EACH row (the capped fsst_decompress stops once the output buffer fills) and
     // test the prefix — O(min(|needle|,|s_i|)) per row — instead of decoding the whole
     // column. Identical hit-set to the uncompressed scan; far less work for short
@@ -479,7 +478,7 @@ OpResult FsstRunner::prefix_search(const std::string& in_path,
             std::chrono::steady_clock::now() - t0).count());
 
     // UNTIMED: write the hit list ([n_hits u32][hits[n_hits] u32]) — same wire as
-    // the shared decompress_then_scan path, so the G6 bit-equality gate is unchanged.
+    // the shared decompress_then_scan path, so the prefix-search check is unchanged.
     std::ofstream f(out_path, std::ios::binary);
     if (!f) throw std::runtime_error("fsst: cannot open out_path " + out_path);
     uint32_t nh = static_cast<uint32_t>(n_hits);

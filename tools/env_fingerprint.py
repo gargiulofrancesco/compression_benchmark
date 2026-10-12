@@ -1,8 +1,8 @@
-"""Standalone environment fingerprint (MIGRATION §3 rig deliverable).
+"""Standalone environment fingerprint.
 
 Writes build/env_fingerprint.json capturing the AVX-512 / FSST-dispatch fairness
-record (V-A) PLUS the L_ra timing prerequisites (invariant TSC, scaling governor,
-turbo state) and basic machine identity. Authoritative on the rig: it disassembles
+record PLUS the L_ra timing prerequisites (invariant TSC, scaling governor,
+turbo state) and basic machine identity. It disassembles
 the built FSST object to confirm whether real AVX-512 code is present, rather than
 deducing from hardware alone.
 

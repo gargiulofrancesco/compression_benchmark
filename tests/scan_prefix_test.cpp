@@ -1,4 +1,4 @@
-// Canonical scan_prefix test. Verifies the G6 reference scanner returns the
+// Canonical scan_prefix test. Verifies the reference prefix scanner returns the
 // expected hit set for hand-curated columns.
 
 #include "scan_prefix.h"

@@ -1,15 +1,14 @@
--- Phase 5 step 3 — A3 ablation results store (sample_fraction sweep).
+-- A3 ablation results store (sample_fraction sweep).
 -- One row per (dataset, column, sample_fraction). For each cell, OnPair trains
 -- a single DynamicThreshold{sample_fraction} dictionary on the column's train
--- split (seed=42, bits=16) and encodes the held-out split with it. The headline
--- outputs (plan §12.6 A3 row) are R (held-out ratio) and T_c (compression time,
+-- split (seed=42, bits=16) and encodes the held-out split with it. The main
+-- outputs are R (held-out ratio) and T_c (compression time,
 -- decomposed here into train_ns + encode_ns); |D| (num_dict_tokens) and the
 -- effective_fraction actually consumed are recorded as diagnostics.
 --
 -- Consumed by experiments/a3_driver.py at db init time. Separate file from the
 -- headline results.sqlite AND from a1_results.sqlite (each ablation owns its
--- own store, per the Phase 5 step 2 storage adjudication). F4/A3 plots
--- (Phase 6) read from here.
+-- own store). Fig. 6 (right) is drawn from here.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;

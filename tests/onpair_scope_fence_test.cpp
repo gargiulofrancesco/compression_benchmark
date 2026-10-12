@@ -1,6 +1,6 @@
-// OnPair scope-fence belt-and-suspenders (+ ).
+// OnPair scope-fence belt-and-suspenders.
 // The shell-script audit `tools/lint/onpair_scope_audit.sh` is the primary
-// enforcement (CI grep + Makefile lint). This TU complements it by including
+// enforcement (`make lint`). This TU complements it by including
 // only the OnPair runner public header (onpair_runner.h) and verifying that
 // the forbidden OnPair-library identifiers
 // (KmpAutomaton/AhoCorasickAutomaton/EQSearch/EqAutomaton) are NOT transitively
@@ -26,8 +26,7 @@
 int main() {
     onpair_bench::OnPairRunner r;
     if (std::string(r.name()) != "onpair") return 1;
-    std::cout << "onpair_scope_fence: OK (narrow public header — see "
-                 "tools/lint/onpair_scope_audit.sh for the load-bearing "
-                 "audit)\n";
+    std::cout << "onpair_scope_fence: OK (narrow public header; the source "
+                 "audit is tools/lint/onpair_scope_audit.sh)\n";
     return 0;
 }

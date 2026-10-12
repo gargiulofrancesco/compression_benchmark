@@ -1,6 +1,6 @@
-"""Fingerprint-strict rerun manifest (hardens; stub).
+"""Run manifest.
 
-Records the inputs/seeds/flags so a second `make reproduce-all` run on the
+Records the inputs/seeds/flags so a second run on the
 same hardware can be diffed against the first to detect nondeterminism.
 """
 from __future__ import annotations

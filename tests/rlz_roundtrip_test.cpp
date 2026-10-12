@@ -55,7 +55,7 @@ static Column make_non_utf8(uint32_t n_rows, size_t bytes_per_row, uint32_t seed
     for (uint32_t i = 0; i < n_rows; ++i) {
         for (size_t j = 0; j < bytes_per_row; ++j) {
             // Lone high-bit bytes (0x80..0xFF), not valid UTF-8 — the case
-            // that SentencePiece v0.2.0 fails on. RLZ preserves verbatim.
+            // that SentencePiece fails on. RLZ preserves verbatim.
             c.bytes.push_back(static_cast<uint8_t>(0x80 + (rng() % 0x80)));
         }
         c.offsets.push_back(static_cast<uint32_t>(c.bytes.size()));

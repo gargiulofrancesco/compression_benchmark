@@ -1,7 +1,7 @@
-// OnPair NativeOnCompressed prefix_search G6 bit-equality test.
-// FIRST NativeOnCompressed G6 row in the lineup — load-bearing for §8.10
-// reviewer-disclosure surface. Hit set produced by OnPairColumnView::starts_with
-// (over bit-packed token stream, no decompression) must match the canonical
+// OnPair NativeOnCompressed prefix_search hit-set equality test.
+// The only NativeOnCompressed baseline in the lineup. The hit set produced by
+// the runner's prefix_search (a PrefixAutomaton scan
+// over the bit-packed token stream, no decompression) must match the canonical
 // scan_prefix bytewise on all 16 fixed needles.
 
 #include "onpair_runner.h"

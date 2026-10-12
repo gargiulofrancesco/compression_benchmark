@@ -1,7 +1,6 @@
 // "decode unification" validation: LZ4_decompress_safe must decode wires
-// produced by fast and HC tiers byte-identically — the property that justifies
-// admitting HC level=12 to the headline (zstd's L19/L22 were excluded because
-// decode cost balloons; LZ4HC decodes via the same path as fast).
+// produced by fast and HC tiers byte-identically (LZ4HC decodes via the same
+// path as fast).
 
 #include "lz4_runner.h"
 #include "runner_protocol.h"

@@ -1,8 +1,7 @@
 // OnPair runner binary entry point.
-// (last; closes ). Consumes onpair_cpp via
-// FetchContent + commit SHA per audit-trail negative.
+// Consumes onpair_cpp via FetchContent + commit SHA (not vendored).
 // See onpair_runner.{h,cpp} and external/onpair_cpp.cmake
-// + docs/benchmark/fairness/onpair.md for the binding decisions.
+// + docs/benchmark/fairness/onpair.md for the configuration.
 
 #include "onpair_runner.h"
 #include "runner_protocol.h"

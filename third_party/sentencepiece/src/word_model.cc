@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.!
 
-#include "util.h"
 #include "word_model.h"
+
+#include "third_party/absl/strings/string_view.h"
+#include "util.h"
 
 namespace sentencepiece {
 namespace word {
 
-Model::Model(const ModelProto &model_proto) {
+Model::Model(const ModelProto& model_proto) {
   model_proto_ = &model_proto;
-  InitializePieces();
+  InitializePieces(/* use_reserved_id_map= */ true);
 }
 
 Model::~Model() {}
@@ -31,7 +33,7 @@ EncodeResult Model::Encode(absl::string_view normalized) const {
   }
 
   EncodeResult output;
-  for (const auto &w : SplitIntoWords(normalized)) {
+  for (const auto& w : SplitIntoWords(normalized)) {
     output.emplace_back(w, PieceToId(w));
   }
 

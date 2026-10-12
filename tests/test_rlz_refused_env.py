@@ -1,7 +1,7 @@
 """RLZ refused-env Python smoke. Tiny column (5000 bytes) at R%=1% →
 column_size * R% = 50 < block_size=16384 → K=0 → status='refused-env'
-cleanly with NULL metrics + non-empty notes. First refused-env participant
-in the lineup; this test exercises the orchestrator-bound code path.
+cleanly with NULL metrics + non-empty notes. This test exercises the
+orchestrator-bound code path.
 """
 from __future__ import annotations
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.!
 
-cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 file(STRINGS "VERSION.txt" SPM_VERSION)
 message(STATUS "VERSION: ${SPM_VERSION}")
 
@@ -25,18 +25,34 @@ project(sentencepiece VERSION ${SPM_VERSION} LANGUAGES C CXX)
 option(SPM_ENABLE_NFKC_COMPILE "Enables NFKC compile" OFF)
 option(SPM_ENABLE_SHARED "Builds shared libaries in addition to static libraries." ON)
 option(SPM_BUILD_TEST "Builds test binaries." OFF)
-option(SPM_COVERAGE "Runs gcov to test coverage." OFF)
-option(SPM_ENABLE_TENSORFLOW_SHARED "Makes a tensorflow compatible shared file." OFF)
 option(SPM_ENABLE_TCMALLOC "Enable TCMalloc if available." ON)
 option(SPM_TCMALLOC_STATIC "Link static library of TCMALLOC." OFF)
-option(SPM_NO_THREADLOCAL "Disable thread_local operator" OFF)
 option(SPM_ENABLE_MSVC_MT_BUILD, "Use /MT flag in MSVC build" OFF)
 option(SPM_CROSS_SYSTEM_PROCESSOR, "Override system processor" "")
+option(SPM_DISABLE_EMBEDDED_DATA, "Disable to embed pre-compiled data." OFF)
+option(SPM_ENABLE_BENCHMARK "Build benchmark programs" OFF)
+option(SPM_NLCODEC_BPE
+       "Build the NLCodec fast BPE trainer from contrib/nlcodec (adds --nlcodec_bpe flag)."
+       OFF)
 
 set(SPM_PROTOBUF_PROVIDER "internal" CACHE STRING "Provider of protobuf library")
 set_property(CACHE SPM_PROTOBUF_PROVIDER PROPERTY STRINGS "internal" "package")
-set(SPM_ABSL_PROVIDER "internal" CACHE STRING "Provider of absl library")
-set_property(CACHE SPM_ABSL_PROVIDER PROPERTY STRINGS "internal" "module" "package")
+set(SPM_ABSL_PROVIDER "module" CACHE STRING "Provider of absl library")
+set_property(CACHE SPM_ABSL_PROVIDER PROPERTY STRINGS "module" "package")
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+add_compile_definitions($<$<CONFIG:Release>:NDEBUG>)
+
+if (SPM_ENABLE_SHARED AND NOT WIN32)
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
+# Includes processor name to avoid conflicts.
+set(CPACK_PACKAGE_FILE_NAME
+    "sentencepiece-${SPM_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
 
 if (SPM_CROSS_SYSTEM_PROCESSOR)
  set(CMAKE_SYSTEM_PROCESSOR ${SPM_CROSS_SYSTEM_PROCESSOR})
@@ -55,6 +71,18 @@ if((CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND
    (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
      CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 8.0))
   string(APPEND CMAKE_CXX_FLAGS " -fmacro-prefix-map=${CMAKE_SOURCE_DIR}/=''")
+endif()
+
+if (NOT DEFINED CMAKE_INSTALL_BINDIR)
+  set(CMAKE_INSTALL_BINDIR bin)
+endif()
+
+if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
+  set(CMAKE_INSTALL_LIBDIR lib)
+endif()
+
+if (NOT DEFINED CMAKE_INSTALL_INCLUDEDIR)
+  set(CMAKE_INSTALL_INCLUDEDIR include)
 endif()
 
 if (UNIX)
@@ -103,16 +131,10 @@ if (APPLE)
   endif()
 endif()
 
-if (NOT DEFINED CMAKE_INSTALL_BINDIR)
-  set(CMAKE_INSTALL_BINDIR bin)
-endif()
-
-if (NOT DEFINED CMAKE_INSTALL_LIBDIR)
-  set(CMAKE_INSTALL_LIBDIR lib)
-endif()
-
-if (NOT DEFINED CMAKE_INSTALL_INCDIR)
-  set(CMAKE_INSTALL_INCDIR include)
+# Add -latomic on riscv64
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL "riscv64")
+  string(APPEND CMAKE_C_STANDARD_LIBRARIES " -latomic")
+  string(APPEND CMAKE_CXX_STANDARD_LIBRARIES " -latomic")
 endif()
 
 # SPDX-License-Identifier: (MIT OR CC0-1.0)
@@ -138,13 +160,17 @@ endfunction()
 
 join_paths(libdir_for_pc_file "\${exec_prefix}" "${CMAKE_INSTALL_LIBDIR}")
 join_paths(includedir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
+join_paths(datadir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_DATADIR}" "sentencepiece")
+
+join_paths(datadir_for_config_file "${prefix}" "${CMAKE_INSTALL_DATADIR}" "sentencepiece")
+set(INSTALL_DATADIR ${datadir_for_config_file})
 
 configure_file("${PROJECT_SOURCE_DIR}/config.h.in" "config.h")
 configure_file("${PROJECT_SOURCE_DIR}/sentencepiece.pc.in" "sentencepiece.pc" @ONLY)
 
 if (NOT MSVC)
   # suppress warning for C++11 features.
-#  add_definitions("-Wno-deprecated-declarations -Wno-deprecated-enum-enum-conversion")
+  # add_definitions("-Wno-deprecated-declarations -Wno-deprecated-enum-enum-conversion")
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/sentencepiece.pc" DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 endif()
 
@@ -154,30 +180,53 @@ if (SPM_BUILD_TEST)
   enable_testing()
 endif()
 
-if (SPM_ABSL_PROVIDER STREQUAL "internal")
-  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl)
-elseif (SPM_ABSL_PROVIDER STREQUAL "module")
+if (SPM_DISABLE_EMBEDDED_DATA)
+ file(GLOB EMBEDDED_DATA_FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/*.bin")
+ install(FILES ${EMBEDDED_DATA_FILES} DESTINATION ${INSTALL_DATADIR})
+endif()
+
+if (SPM_ABSL_PROVIDER STREQUAL "module")
   include(FetchContent)
   FetchContent_Populate(abseil-cpp
         GIT_REPOSITORY  https://github.com/abseil/abseil-cpp.git
         SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp
-        GIT_PROGRESS TRUE)
+        GIT_PROGRESS TRUE
+        GIT_TAG 20260526.0)
   add_subdirectory(third_party/abseil-cpp)
-  if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl.org)
-    file(RENAME ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl.org)
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-      ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp/absl
-      ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl)
+  if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl)
+    file(CREATE_LINK
+         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/abseil-cpp/absl
+         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl
+         SYMBOLIC)
   endif()
 elseif (SPM_ABSL_PROVIDER STREQUAL "package")
   find_package(absl REQUIRED)
   get_target_property(ABSL_INCLUDE_DIRS absl::base INTERFACE_INCLUDE_DIRECTORIES)
-  if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl.org)
-    file(RENAME ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl.org)
-    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
-        ${ABSL_INCLUDE_DIRS}/absl ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl)
+  if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl)
+    file(CREATE_LINK
+         ${ABSL_INCLUDE_DIRS}/absl
+         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/absl
+         SYMBOLIC)
   endif()
   include_directories(${ABSL_INCLUDE_DIRS})
+endif()
+
+if(SPM_ENABLE_BENCHMARK)
+  include(FetchContent)
+  FetchContent_Populate(
+      google_benchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark
+      GIT_PROGRESS TRUE
+      GIT_TAG v1.9.5
+   )
+
+  set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "Disable benchmark gtest" FORCE)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable benchmark testing" FORCE)
+
+  add_subdirectory(third_party/benchmark)
+  
+  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/include)
 endif()
 
 add_subdirectory(src)

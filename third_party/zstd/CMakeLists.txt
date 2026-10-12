@@ -1,6 +1,7 @@
 # Vendored zstd v1.5.6 lib/ subset → libzstd_static.a.
-# Sidesteps upstream's CMake to control flags per Phase 2 zstd fairness card.
-# Single-thread (ZSTD_MULTITHREAD=0); no legacy decoders (ZSTD_LEGACY_SUPPORT=0).
+# Sidesteps upstream's CMake to control the flags (docs/benchmark/fairness/zstd.md).
+# Single-threaded (ZSTD_MULTITHREAD left undefined, see below); no legacy
+# decoders (ZSTD_LEGACY_SUPPORT=0).
 
 # Trained-dictionary builder (lib/dictBuilder + lib/zdict.h) REMOVED 2026-06-08:
 # zstd runs in its as-deployed streaming configuration only (no ZDICT / trained-

@@ -1,6 +1,6 @@
-"""step 5 — A4 driver smoke gate.
+"""A4 driver smoke test.
 
-Invokes `python -m experiments.a4_driver --smoke` against the committed V-D
+Invokes `python -m experiments.a4_driver --smoke` against the committed synthetic
 fixture (used whole — A4 is a full-column experiment); asserts a4_results.sqlite
 contains exactly one row with valid metrics, including a positive M_train
 (peak RSS of the compress-only process). Skipped if the OnPair runner binary
@@ -56,7 +56,7 @@ def test_a4_smoke_end_to_end(tmp_path: Path) -> None:
     assert capacity == 1 << 12          # capacity ≡ 2^bits = 4096.
     assert frac == 0.15
     assert strategy == "dynamic"
-    assert n_rows == 1000          # V-D fixture is 1000 rows, used whole.
+    assert n_rows == 1000          # The fixture is 1000 rows, used whole.
     assert in_b > 0
 
     # Bit-tight identity for the full column.

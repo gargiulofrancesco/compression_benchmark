@@ -1,4 +1,4 @@
-// G6 self-consistency: bpe's prefix_search hit-set must match the canonical
+// Prefix-search check: bpe's prefix_search hit-set must match the canonical
 // scan_prefix output bytewise on the 16 fixed needles, at V=16384.
 
 #include "bpe_runner.h"

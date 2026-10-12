@@ -1,21 +1,25 @@
-"""ICDE — pre-generate synthetic V-D columns to disk, in parallel.
+"""Pre-generate the synthetic columns to disk, in parallel.
 
 Two column sets, written under datasets/synthetic_vd/:
 
-F6 Pareto sweep (§8.9): 3×3 cells, L ∈ {8, 32, 128} × rho ∈ {0.0, 0.5, 0.95}
-at sigma=16, constant ~32 MiB of payload per cell (N scales with 1/L), so every
-cell presents the same workload volume:
+Synthetic sweep (Section VIII-G, Fig. 8): 3×3 cells, L ∈ {8, 32, 128} ×
+rho ∈ {0.0, 0.5, 0.95} at sigma=16, constant ~32 MiB of payload per cell (N
+scales with 1/L), so every cell presents the same workload volume:
     f6__L{L}_rho{rho}.col
 
-N-sweep (§8.8 / T4): L=32, sigma=16, rho=0.5, N ∈ {10^5, 10^6, 10^7, 10^8}:
+Scale sweep (Section VIII-F): L=32, sigma=16, rho=0.5, N ∈ {10^5, 10^6, 10^7, 10^8}:
     nsweep__n{N}.col
 
 Sharded generation: rows are i.i.d. given the cell parameters (the
 preferential-attachment state resets every row), so a column of N rows is the
 concatenation of independent shards with derived seeds seed*1000+shard —
 deterministic, parallel, and distribution-identical to single-shot generation.
+
+A column already on disk is kept. `--set sweep` or `--set scale` generates one
+of the two sets only.
 """
 from __future__ import annotations
+import argparse
 import multiprocessing as mp
 import os
 import struct
@@ -54,7 +58,10 @@ def write_column_sharded(path: Path, L: int, rho: float, n_rows: int,
     results = pool.map(_gen_shard, jobs)
     total = sum(len(b) for b, _ in results)
     n = sum(len(o) - 1 for _, o in results)
-    with open(path, "wb") as f:
+    # written under a temporary name, so that an interrupted run leaves no
+    # truncated column for the next one to keep
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
         f.write(struct.pack("<II", n, total))
         base = 0
         f.write(struct.pack("<I", 0))
@@ -63,19 +70,26 @@ def write_column_sharded(path: Path, L: int, rho: float, n_rows: int,
             base += len(b)
         for b, _ in results:
             f.write(b)
+    os.replace(tmp, path)
     print(f"wrote {path.name}: {n} rows, {total/2**20:.1f} MiB", flush=True)
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--set", choices=("sweep", "scale", "all"), default="all",
+                    help="which columns to generate (default: all)")
+    which = ap.parse_args().set
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     with mp.Pool(min(N_SHARDS, os.cpu_count() or 4)) as pool:
-        for L, rho in F6_CELLS:
-            n_rows = max(1000, F6_BYTES_TARGET // L)
-            write_column_sharded(OUT_DIR / f"f6__L{L}_rho{rho}.col",
-                                 L, rho, n_rows, pool)
-        for n in NSWEEP:
-            write_column_sharded(OUT_DIR / f"nsweep__n{n}.col",
-                                 32, 0.5, n, pool)
+        if which in ("sweep", "all"):
+            for L, rho in F6_CELLS:
+                n_rows = max(1000, F6_BYTES_TARGET // L)
+                write_column_sharded(OUT_DIR / f"f6__L{L}_rho{rho}.col",
+                                     L, rho, n_rows, pool)
+        if which in ("scale", "all"):
+            for n in NSWEEP:
+                write_column_sharded(OUT_DIR / f"nsweep__n{n}.col",
+                                     32, 0.5, n, pool)
     print("gen_vd_columns: done")
     return 0
 

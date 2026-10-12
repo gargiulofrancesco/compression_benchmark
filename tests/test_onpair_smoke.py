@@ -1,9 +1,8 @@
 """OnPair Python smoke: NDJSON handshake + compress + bit-tight identity
-at bits=16. (last; closes lineup). Library
-consumed via FetchContent from public github at SHA f8ecc64f per
-. Target ninth bit-tight baseline.
+at bits=16. Library
+consumed via FetchContent from public github at SHA f8ecc64f.
 
-Bit-tight identity (NON-collapse natural split, fifth in lineup):
+Bit-tight identity (natural dict/tokens split):
     dict_bytes + tokens_bytes + boundaries_bytes == output_bytes (exactly)
 Boundaries derivation (see runners/onpair/onpair_runner.h):
     boundaries_bytes = 25 + 4 * (N + 1)
@@ -12,7 +11,7 @@ Boundaries derivation (see runners/onpair/onpair_runner.h):
 
 OnPair-only diagnostic sub-counter:
     metric_name='dict_offsets_bytes' = (num_tokens+1)*4   <=  dict_bytes
-    (surfaces internal split of dict_bytes; NOT in §12.6 ratio formula.)
+    (surfaces internal split of dict_bytes; not a separate term of the ratio.)
 """
 from __future__ import annotations
 
@@ -107,7 +106,7 @@ def test_onpair_handshake_and_compress(tmp_path: Path) -> None:
         assert metrics["boundaries_bytes"] == 25 + 4 * (N + 1)
         assert metrics["num_rows"] == N
 
-        # Bit-tight identity (ninth bit-tight baseline).
+        # Bit-tight identity.
         assert (metrics["dict_bytes"]
                 + metrics["tokens_bytes"]
                 + metrics["boundaries_bytes"]) == metrics["output_bytes"], (
@@ -117,8 +116,8 @@ def test_onpair_handshake_and_compress(tmp_path: Path) -> None:
         assert "dict_offsets_bytes" in metrics, \
             "dict_offsets_bytes diagnostic MISSING"
         # dict_offsets_bytes is the offsets-table portion of dict_bytes; the
-        # diagnostic is contained within dict_bytes (NOT subtracted, NOT in
-        # §12.6 ratio formula).
+        # diagnostic is contained within dict_bytes (NOT subtracted, not a
+        # separate term of the ratio).
         assert 0 < metrics["dict_offsets_bytes"] <= metrics["dict_bytes"]
         # Must be divisible by 4 (offsets are u32).
         assert metrics["dict_offsets_bytes"] % 4 == 0

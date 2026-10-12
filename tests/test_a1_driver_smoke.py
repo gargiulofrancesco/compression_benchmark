@@ -1,6 +1,6 @@
-"""step 2 — A1 driver smoke gate.
+"""A1 driver smoke test.
 
-Invokes `python -m experiments.a1_driver --smoke` against the committed V-D
+Invokes `python -m experiments.a1_driver --smoke` against the committed synthetic
 fixture; asserts a1_results.sqlite contains exactly one row with valid metrics.
 Skipped if the OnPair runner binary is not built (smoke runs `make build` first).
 """

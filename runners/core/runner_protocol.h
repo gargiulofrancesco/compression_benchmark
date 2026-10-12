@@ -1,8 +1,8 @@
 #pragma once
 // Runner ABC + NDJSON dispatch loop.
 // Every baseline (zstd, LZ4, FSST,..., OnPair) implements this ABC.
-// The dispatch loop owns file I/O, column serialisation, and steady_clock timing —
-// baselines see typed Columns and streams only.
+// The dispatch loop owns NDJSON parsing and the whole-op steady_clock timing
+// (t_op_ns); runners receive file paths and use read_column / write_column.
 
 #include <cstdint>
 #include <iosfwd>
@@ -72,11 +72,12 @@ public:
                                    const std::string& out_path,
                                    const std::string& config_json) = 0;
 
-    // step 2 A1 ablation — OnPair only. Reads train and heldout
+    // A1/A3 ablations — OnPair only. Reads train and heldout
     // columns, trains on `train_in_path` using both Fixed{T} and matched
-    // Dynamic{f}, then encodes `heldout_in_path` with each trained dictionary.
+    // Dynamic{f} (A1) or one strategy alone (A3), then encodes
+    // `heldout_in_path` with each trained dictionary.
     // Default implementation returns status='unsupported'; the OnPair runner
-    // overrides it. `out_path` is reserved for the future (currently unused).
+    // overrides it. `out_path` is unused.
     virtual OpResult held_out_compress(const std::string& /*train_in_path*/,
                                        const std::string& /*heldout_in_path*/,
                                        const std::string& /*out_path*/,
@@ -85,15 +86,15 @@ public:
                         .notes  = "held_out_compress not implemented by this runner"};
     }
 
-    // step 6 (A5) — random-access latency primitive. Reads a compressed
+    // Random-access latency primitive. Reads a compressed
     // column from `in_path`, then times `n_samples` single-string random
     // accesses drawn from a query distribution (config_json: n_samples, seed,
-    // query_distribution, warmup) with NO file I/O inside the timed loop, and
-    // reports l_ra_{p50,p95,p99,mean,min,max}_ns. For block-based baselines
-    // (zstd, lz4) each access decodes the enclosing block, so L_ra grows with
-    // block size; OnPair seeks per-string, so its L_ra is block-independent
-    // (the flat reference line of figure A5). Default returns 'unsupported';
-    // the zstd / lz4 / onpair runners override it. `out_path` is unused.
+    // query_distribution, query_layout, warmup) with NO file I/O inside the
+    // timed loop, and reports l_ra_{p50,p95,p99,mean,min,max}_ns. For
+    // block-based baselines (zstd, lz4) each access decodes the enclosing
+    // block, so L_ra grows with block size; per-string baselines decode one
+    // row, so their L_ra is block-independent. Default returns 'unsupported';
+    // every runner in this repository overrides it. `out_path` is unused.
     virtual OpResult ra_latency(const std::string& /*in_path*/,
                                 const std::string& /*out_path*/,
                                 const std::string& /*config_json*/) {

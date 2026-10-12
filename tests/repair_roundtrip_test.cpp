@@ -10,7 +10,9 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <random>
 #include <string>
 #include <vector>
@@ -90,6 +92,23 @@ static bool roundtrip(const Column& col, const std::string& tag) {
                   << " (bytes " << got.bytes.size() << " vs " << col.bytes.size()
                   << ", rows " << got.num_rows() << " vs " << col.num_rows() << ")\n";
         return false;
+    }
+    // Row access through the grammar-descent index: first, last and a spread
+    // of rows in between must each decode to exactly their own bytes.
+    const size_t n = col.num_rows();
+    for (size_t idx : {size_t{0}, n / 7, n / 3, n / 2, (2 * n) / 3, n - 2, n - 1}) {
+        fs::path row = tmp / (tag + ".row");
+        auto rr = r.random_decode(wire.string(), idx, row.string(), cfg);
+        std::ifstream f(row, std::ios::binary);
+        const std::string got_row((std::istreambuf_iterator<char>(f)),
+                                  std::istreambuf_iterator<char>());
+        const std::string want(col.bytes.begin() + col.offsets[idx],
+                               col.bytes.begin() + col.offsets[idx + 1]);
+        if (rr.status != "ok" || got_row != want) {
+            std::cerr << "[repair_rt] " << tag << " ROW ACCESS MISMATCH at row "
+                      << idx << " (status=" << rr.status << ")\n";
+            return false;
+        }
     }
     std::cout << "[repair_rt] " << tag << " OK ("
               << col.num_rows() << " rows, " << col.bytes.size() << " bytes)\n";

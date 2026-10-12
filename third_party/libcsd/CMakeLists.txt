@@ -1,22 +1,20 @@
 # Vendored migumar2/libCSD master HEAD SHA 568bf8a876684d871b97c93b4322ddf71eb830b3
 # → libcsd_static.a (single archive covering ALL StringDictionary* variants).
 #
-# Sidesteps upstream Makefile to control flags per Phase 2 RPDAC fairness card.
+# Sidesteps upstream's Makefile to control the flags.
 #
-# *** Phase 4 RPDAC adjusted decision #1 ***
-# The Phase 2 RPDAC card said "RPDAC-relevant subset" (no Hash/XBW/FMINDEX/PFC/HTFC),
-# but StringDictionary.h itself includes all 11 sibling type headers unconditionally
+# Only the Re-Pair grammar builder is used, but the whole tree is compiled:
+# StringDictionary.h itself includes all 11 sibling type headers unconditionally
 # at the bottom of the file, and StringDictionary.cpp::load() factory references every
 # StringDictionary*::load static symbol. We cannot compile/link the RPDAC subset alone.
-# We vendor and link the full libCSD tree. Phase 4 baseline-5 (PFC/HTFC) reuses this
-# same archive — no additional vendoring step.
+# We therefore vendor and link the full libCSD tree.
 #
 # Single-thread fairness: libCSD has no MT API (no pthread / std::thread / OpenMP) —
-# nothing to disable. CI grep audit on runners/libcsd_rpdac/ verifies no threading.
+# nothing to disable.
 #
 
-# Use C++17 first per Phase 2 RPDAC card. If libCSD's 2011-era idioms (auto_ptr,
-# register, throw specifications) fail to compile, we'll fall back to C++14.
+# C++17; the warnings that libCSD's 2011-era idioms raise (auto_ptr, register,
+# throw specifications) are silenced below.
 set(LIBCSD_CXX_STANDARD 17)
 
 # --- libCSD top-level StringDictionary* sources ---
@@ -176,7 +174,7 @@ target_include_directories(libcsd_static PUBLIC
 
 target_compile_features(libcsd_static PRIVATE cxx_std_${LIBCSD_CXX_STANDARD})
 
-# Force-include OUR compat shim (not vendored — lives in runners/libcsd_rpdac/)
+# Force-include our compatibility shim (third_party/libcsd_compat.h, not vendored)
 # before every libCSD TU's content. Defines ulong/uchar/uint/ushort that
 # libCSD assumes from Linux <sys/types.h> but macOS does not provide.
 target_compile_options(libcsd_static PRIVATE

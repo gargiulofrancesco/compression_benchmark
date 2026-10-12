@@ -3,10 +3,9 @@
 Upstream: Amazon Reviews 2023 (McAuley lab), Books category metadata
 (meta_Books.jsonl.gz). One row per non-empty `title` field, kept in ORIGINAL
 file order (datasets are never shuffled; the JSONL order is the natural
-dump order). Mirrors the original extraction recipe's
-process_datasets.py logic: json per line, title.strip(), skip empties.
+dump order): json per line, title.strip(), skip empties.
 
-SIGIR-measured stats: ~4.45M rows, 86.9% distinct, L_avg 52 B, LCP_avg 18.
+Stats (Table I): ~4.45M rows, 86.9% distinct, L_avg 52 B.
 """
 from __future__ import annotations
 import gzip

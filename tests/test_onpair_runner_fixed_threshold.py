@@ -1,4 +1,4 @@
-"""step 2 — OnPair runner regression for FixedThreshold cfg knob.
+"""OnPair runner regression for FixedThreshold cfg knob.
 
 Spawns the OnPair runner with `threshold_strategy="fixed"` + `threshold_value=10`
 cfg_json; runs the standard compress op against a tiny synthetic column;

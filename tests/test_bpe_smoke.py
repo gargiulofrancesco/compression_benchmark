@@ -1,7 +1,7 @@
 """Spawn the bpe runner binary, handshake, drive one compress op end to end.
-Asserts BPE bit-tight identity (M + ceil(T*B/8) + 16+4*(N+1) == output_bytes)
-at V=4096 plus the wire-shape sanity checks the BPE card mandates
-(structurally guaranteed natural dict/tokens split — sixth bit-tight baseline).
+Asserts BPE bit-tight identity on the accounted size (dict_bytes +
+ceil(T*B/8) + 24+4*(N+1) == output_bytes) at V=4096 plus wire-shape sanity
+checks (natural dict/tokens split).
 """
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def test_bpe_handshake_and_compress(tmp_path: Path) -> None:
         assert hello["name"] == "bpe"
         assert hello["prefix_search_mode"] == "DecompressThenScan"
         assert hello["baseline_build_flags_sha"] == sha
-        assert hello["version"].startswith("sentencepiece-v0.2.0")
+        assert hello["version"].startswith("sentencepiece-v0.2.2")
 
         col = tmp_path / "in.col"
         rows = _make_word_vocab_column(seed=123)

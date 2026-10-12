@@ -1,7 +1,6 @@
 #pragma once
 // Pure C++ RLZ (Relative Lempel-Ziv) algorithm core.
-//: re-take on — empirical
-// inspection of skuruppu/RLZ revealed a file-only API + heavy GPL-3.0-or-
+// Inspection of skuruppu/RLZ revealed a file-only API + heavy GPL-3.0-or-
 // later libcds dependency. Pure C++ reimplementation following
 // Hoobin/Puglisi/Zobel 2011 VLDB + Kuruppu PhD 2012 + Kuruppu/Puglisi/Zobel
 // "Relative Lempel-Ziv Compression of Genomes for Large-Scale Storage and
@@ -10,11 +9,11 @@
 // Algorithm summary (Hoobin 2011 §3 + §4):
 //   1) Build reference R by uniformly sampling K = ceil(R% · L / block_size)
 //      blocks of block_size bytes from the concatenated corpus L = Σ |row_i|.
-// Seed is mt19937(seed) — locked at 42 per.
+//      The sampler is mt19937(seed); the benchmark uses seed 42.
 //   2) Build SA over R via divsufsort.
 //   3) For each input row, greedy LZ77 factor-parse against R: at position
 //      p, find the longest prefix of row[p:] appearing in R via SA binary
-//      search (matchlen >= max_match cap of 65535); emit (pos, len,
+//      search (matchlen capped at max_match_len); emit (pos, len,
 //      literal=row[p+len]) and advance p by (len + 1). Literal-only case
 //      (no match at p, or end-of-row): emit (0, 0, row[p]).
 //
@@ -31,7 +30,7 @@ namespace onpair_bench::rlz_core {
 // One factor of an RLZ phrase stream.
 struct Factor {
     uint32_t pos;      // position in R; 0 if literal-only
-    uint32_t len;      // length of R-match; 0 if literal-only; <= 65535
+    uint32_t len;      // length of R-match; 0 if literal-only; <= max_match_len
     uint8_t  literal;  // byte that follows the R-match (or the literal byte
                        // when len==0). Always present (Hoobin 2011 §3.2).
 };

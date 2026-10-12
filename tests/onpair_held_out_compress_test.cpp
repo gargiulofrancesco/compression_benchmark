@@ -1,4 +1,4 @@
-// step 2 — A1 ablation: held_out_compress paired protocol contract.
+// A1 ablation: held_out_compress paired protocol contract.
 //
 // Generates a 200-row synthetic column, manually splits 160/40 train/heldout,
 // runs the held_out_compress op at T=10, asserts:

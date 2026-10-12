@@ -1,8 +1,8 @@
 """Machine + build-flag fingerprinting.
 
 baseline_build_flags_sha is derived from the canonical sorted flag list — the
-SAME list that runners/CMakeLists.txt embeds. will share a source of
-truth; for we duplicate and document.
+SAME list that the top-level CMakeLists.txt passes to add_compile_options. The
+two copies are kept in step by hand.
 """
 from __future__ import annotations
 import glob
@@ -14,8 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-# dev profile (M1-grade publish flags pin -march=icelake-server in;
-# the dev profile uses -march=native — see CMakeLists.txt for the lockstep list).
+# The build flags (-march=native — see CMakeLists.txt for the lockstep list).
 DEV_BUILD_FLAGS: list[str] = [
     "-DNDEBUG",
     "-O3",
@@ -30,15 +29,15 @@ def _sha(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
-# ── AVX-512 / FSST runtime-dispatch fingerprint (MIGRATION §3, V-A fairness) ──
+# ── AVX-512 / FSST runtime-dispatch fingerprint (AVX-512 fairness) ────────────
 # FSST only takes its AVX-512 compress path when BOTH hold: the CPU advertises
 # AVX-512F, AND libfsst was compiled with __AVX512F__ (otherwise
 # fsst_compressAVX512 is a scalar no-op stub and fsst_hasAVX512()'s CPUID gate
 # never fires). We confirm the build half authoritatively by disassembling the
 # built fsst_avx512 TU and looking for real %zmm code, and the hardware half via
-# /proc/cpuinfo. The Phase-3 dev profile builds FSST WITHOUT AVX-512 flags
-# (-march=icelake-server is deferred to the Phase-7 publish profile), so on any
-# rig today the path is "scalar"; record that honestly as a fairness caveat.
+# /proc/cpuinfo. The build uses -march=native, so FSST gets AVX-512 code only
+# on a host that has it; on any other host the path is "scalar", and that is
+# recorded as a fairness caveat.
 
 def cpuinfo_flags() -> set[str]:
     try:
@@ -55,12 +54,12 @@ def has_avx512f() -> bool:
     return "avx512f" in cpuinfo_flags()
 
 
-# ── Throughput-path environment control (W-6, machine-AGNOSTIC) ───────────────
+# ── Throughput-path environment control (machine-AGNOSTIC) ────────────────────
 # The headline throughput axes (T_c, T_d) are only trustworthy under a controlled
 # frequency/thermal environment: performance governor + turbo off + pinning. The
 # rdtscp L_ra path (runners/core/ra_timer_tsc.h) already enforces this for latency;
 # these helpers let the orchestrator enforce the SAME for throughput. The check is
-# on the ENVIRONMENT, not the CPU identity, so any box configured this way qualifies
+# on the ENVIRONMENT, not the CPU identity, so any machine configured this way qualifies
 # (reproduction on other hardware is unaffected).
 
 def _read_first_line(path: str) -> str:
@@ -101,18 +100,17 @@ def turbo_state() -> str:
 
 
 def env_control() -> tuple[bool, str, str, str]:
-    """(controlled, reason, governor_summary, turbo_state). Controlled iff the
-    governor is 'performance' on every CPU AND turbo is confirmably off."""
+    """(controlled, reason, governor_summary, turbo_state). Controlled, that is
+    set up as for the paper, iff the governor is 'performance' on every CPU AND
+    turbo is confirmably off."""
     gov = scaling_governor_summary()
     turbo = turbo_state()
     if gov != "performance":
         return (False,
-                f"scaling_governor='{gov or 'unreadable'}' (need 'performance' on all CPUs)",
-                gov, turbo)
+                f"the frequency governor is '{gov or 'unreadable'}', not 'performance' "
+                "on every CPU", gov, turbo)
     if turbo != "off":
-        return (False,
-                f"turbo='{turbo}' (need intel_pstate/no_turbo=1 or cpufreq/boost=0)",
-                gov, turbo)
+        return (False, f"turbo is {turbo}, not off", gov, turbo)
     return (True, "performance governor + turbo off", gov, turbo)
 
 
@@ -161,9 +159,9 @@ class EnvProbe:
     build_flags_sha: str
     m1_grade: bool
     avx512f: bool
-    fsst_simd_path: str        # "avx512" | "scalar" — V-A fairness fingerprint
+    fsst_simd_path: str        # "avx512" | "scalar" — AVX-512 fairness fingerprint
     fsst_simd_reason: str
-    scaling_governor: str      # governor summary across CPUs (W-6 throughput-env)
+    scaling_governor: str      # governor summary across CPUs
     turbo: str                 # "off" | "on" | "unknown"
     env_controlled: bool       # governor==performance on all CPUs AND turbo off
     env_control_reason: str

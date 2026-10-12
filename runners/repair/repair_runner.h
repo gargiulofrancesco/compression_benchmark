@@ -1,7 +1,7 @@
 #pragma once
 // RepairRunner — plain Re-Pair grammar compression of the WHOLE column text.
 //
-// Added ("just Re-Pair, no prefix coding"). Unlike the
+// Just Re-Pair, no prefix coding. Unlike the
 // libCSD string dictionaries (RPDAC = Re-Pair+DAC, RPFC = Re-Pair+FrontCoding),
 // this is the canonical Larsson-Moffat Re-Pair grammar over the FULL column
 // concatenation (duplicates included — they are captured as grammar rules, NOT
@@ -20,8 +20,8 @@
 // boundaries_bytes = scalars + row_offsets. ratio = input/(dict+tokens) — the
 // id-sequence accounting issue of RPDAC/PFC does NOT apply (no id array).
 //
-// Random access is bulk-only (decode all, slice the row) — faithful to a text
-// grammar with no random-access index; prefix_search is DecompressThenScan.
+// Random access descends the grammar over an index built at load time (see
+// ra_latency below); prefix_search is DecompressThenScan.
 
 #include "runner_protocol.h"
 

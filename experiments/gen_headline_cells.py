@@ -1,26 +1,28 @@
-"""— headline benchmark cell generator (§8.2 / F1 / T1 / T2).
+"""Headline benchmark cell generator (Table II, Fig. 4).
 
-Expands (every real column in experiments/datasets.yaml) × (every baseline in
-experiments/headline_roster.yaml) into an explicit cells YAML that the canonical
-orchestrator (orchestrator.orchestrate) consumes — so every headline cell gets
-the same G6 + round-trip correctness verification as the smoke run, and the
-headline numbers land in the headline results.sqlite (NOT in the ablation
-stores).
+Expands (every column tagged `headline: true` in experiments/datasets.yaml) ×
+(every baseline in experiments/headline_roster.yaml) into an explicit cells YAML
+that the canonical orchestrator (orchestrator.orchestrate) consumes — so every
+headline cell gets the same round-trip and prefix-search verification as the
+smoke run, and the headline numbers land in the headline results.sqlite (NOT in
+the ablation stores).
 
-This adds NO orchestrator change: real cells use the existing
+Real cells use the orchestrator's
 `dataset_kind: real` + `column_path` path (orchestrate._materialise_input_column).
 The materialised columns under datasets/materialized/<dataset>/<file> do not
-exist until `make datasets` runs on the rig; the generated YAML just carries the
-paths, and the orchestrator raises a friendly "run make datasets" error at run
+exist until `make datasets` has run; the generated YAML just carries the
+paths, and the orchestrator raises a "run make datasets" error at run
 time if a column is missing.
 
 Modes:
   --smoke : tiny lossless trio (per headline_roster.yaml `smoke:`) backed by the
-            committed V-D 1000-row fixture as dataset_kind=real. Exercises the
-            generator + real copy-from-disk path + orchestrator end-to-end on
+            committed synthetic 1000-row fixture as dataset_kind=real. Exercises
+            the generator + real copy-from-disk path + orchestrator end-to-end on
             committed data. <~30 s wall.
-  default : full grid (all real columns × 11 baselines) pointing at
-            datasets/materialized/. Rig only (needs `make datasets`).
+  default : full grid (the six headline columns × 11 baselines) pointing at
+            datasets/materialized/ (needs `make datasets`).
+            --part main|last splits it: `last` holds the roster's `run_last`
+            baselines (Re-Pair), `main` everything else.
 
 Usage:
   python -m experiments.gen_headline_cells --out build/headline_cells.yaml [--smoke]
@@ -80,20 +82,42 @@ def _cell(cell_id: str, baseline: str, runner_path: str, dataset: str,
     }
 
 
-# Headline statistical-robustness floor (.5). The median ± MAD primary
+# Headline statistical-robustness floor. The median ± MAD primary
 # statistic wants an ODD repetition count so the reported median is an observed
 # measurement, not the interpolation between the two central order statistics.
 HEADLINE_MIN_SAMPLES = 11
 
 
-def build_full(datasets_doc: dict, roster_doc: dict) -> dict:
+def _select(wanted, known: list[str], what: str) -> list[str]:
+    """`known` restricted to the names in `wanted`, in the roster's order.
+    An unknown name is an error that lists the valid ones."""
+    if not wanted:
+        return known
+    unknown = sorted(set(wanted) - set(known))
+    if unknown:
+        raise SystemExit(f"gen_headline_cells: unknown {what} {', '.join(unknown)}; "
+                         f"choose from: {' '.join(known)}")
+    return [k for k in known if k in set(wanted)]
+
+
+def build_full(datasets_doc: dict, roster_doc: dict, part: str = "all",
+               baselines=None, columns=None) -> dict:
+    """`part` selects the cells: "main" leaves out the roster's `run_last`
+    baselines, "last" keeps only those, "all" is main followed by last.
+    `baselines` and `columns` (`dataset/column`) restrict the grid to a subset;
+    None keeps all of them."""
     n_samples = int(roster_doc["n_samples"])
     if n_samples < HEADLINE_MIN_SAMPLES:
         raise SystemExit(
             f"gen_headline_cells: headline n_samples={n_samples} is below the "
-            f"statistical-robustness floor HEADLINE_MIN_SAMPLES={HEADLINE_MIN_SAMPLES} "
-            f"(.5). Raise experiments/headline_roster.yaml `n_samples`.")
+            f"statistical-robustness floor HEADLINE_MIN_SAMPLES={HEADLINE_MIN_SAMPLES}"
+            f". Raise experiments/headline_roster.yaml `n_samples`.")
     cols = _real_columns(datasets_doc)
+    keep_cols = _select(columns, [f"{c['dataset']}/{c['column']}" for c in cols], "column")
+    cols = [c for c in cols if f"{c['dataset']}/{c['column']}" in keep_cols]
+    keep = _select(baselines, [b["baseline"] for b in roster_doc["baselines"]], "baseline")
+    roster_doc = {**roster_doc,
+                  "baselines": [b for b in roster_doc["baselines"] if b["baseline"] in keep]}
     cells = []
     for col in cols:
         # dataset label is a `ds/col` composite so the headline figures/tables can
@@ -105,10 +129,17 @@ def build_full(datasets_doc: dict, roster_doc: dict) -> dict:
                 cell_id=cell_id, baseline=b["baseline"],
                 runner_path=b["runner_path"], dataset=ds_label,
                 column_path=col["column_path"], config_json=b["config_json"]))
+    # Stable partition: `run_last` baselines close the grid, so the slow tail
+    # cannot hold up (or, if the run is interrupted, cost) the other cells.
+    last = set(roster_doc.get("run_last", []))
+    main_cells = [c for c in cells if c["baseline"] not in last]
+    last_cells = [c for c in cells if c["baseline"] in last]
+    cells = {"all": main_cells + last_cells, "main": main_cells,
+             "last": last_cells}[part]
     return {
         "n_samples": n_samples,
         "min_samples": HEADLINE_MIN_SAMPLES,   # orchestrator refuses to run below this
-        "require_controlled_env": True,        # refuse uncontrolled governor/turbo (W-6)
+        "require_controlled_env": True,        # refuse uncontrolled governor/turbo
         "mem_cap_gb": int(roster_doc["mem_cap_gb"]),
         "timeout_seconds": int(roster_doc["timeout_seconds"]),
         "cells": cells,
@@ -140,6 +171,13 @@ def main() -> int:
     p.add_argument("--roster", type=Path, default=ROSTER)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--smoke", action="store_true")
+    p.add_argument("--part", choices=("all", "main", "last"), default="all",
+                   help="main: without the roster's run_last baselines; "
+                        "last: only those; all: both (default)")
+    p.add_argument("--baseline", action="append", default=[],
+                   help="keep only this baseline (repeatable; default: all)")
+    p.add_argument("--column", action="append", default=[],
+                   help="keep only this dataset/column (repeatable; default: all)")
     a = p.parse_args()
 
     roster_doc = yaml.safe_load(a.roster.read_text())
@@ -147,7 +185,7 @@ def main() -> int:
         doc = build_smoke(roster_doc)
     else:
         datasets_doc = yaml.safe_load(a.datasets.read_text())
-        doc = build_full(datasets_doc, roster_doc)
+        doc = build_full(datasets_doc, roster_doc, a.part, a.baseline, a.column)
 
     # Validate every config_json parses (fail at generate time, not run time).
     for c in doc["cells"]:

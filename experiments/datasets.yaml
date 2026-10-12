@@ -102,7 +102,7 @@ datasets:
     approx_bytes: 240000000
     headline: true      # Amazon Books title metadata, kept in ORIGINAL file
                         # order (datasets are never shuffled or sorted).
-                        # Measured: U/N=0.869, Lavg=52, LCP_avg=18.
+                        # Measured: U/N=0.869, Lavg=52, LCP_avg=17.
   extractor: tools.datasets.amazon
   held_out:
     fraction: 0.2
@@ -116,7 +116,7 @@ datasets:
     sha256: e4793027fabd922948763794c4643b07729d207bb537fc766a15961aa711efdd
     license_id: CC-BY-SA-4.0
   subset:
-    limit: 1000000          # subset (the only capped dataset; )
+    limit: 1000000          # subset (the only capped dataset)
   columns:
   - name: abstract
     output_filename: abstract.col

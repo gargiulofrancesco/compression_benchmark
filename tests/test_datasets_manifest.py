@@ -1,4 +1,4 @@
-"""step 1 — datasets.yaml schema contract.
+"""datasets.yaml schema contract.
 
 The manifest is the source of truth for experiment runners; bugs in
 its schema or license-id cross-references are caught here before they bleed
@@ -72,7 +72,7 @@ def test_required_fields_per_entry() -> None:
             assert "output_sha256" in entry
             # smoke_fixture optional: some datasets (dbpedia, msmarco_*)
             # have no per-dataset extractor fixtures; the smoke run uses the
-            # synthetic V-D fixture (see headline_roster).
+            # synthetic fixture (see headline_roster).
 
 
 def test_sha256_field_is_valid_or_placeholder() -> None:
@@ -108,7 +108,7 @@ def test_license_ids_cross_referenced_in_LICENSING() -> None:
 def test_smoke_fixtures_committed() -> None:
     """Every smoke_fixture.columns entry points to an existing file.
 
-    Exception: entries whose `smoke_fixture.sf_fixture` is set (TPC-H/TPC-DS)
+    Exception: entries whose `smoke_fixture.sf_fixture` is set (TPC-H)
     generate their fixtures via DuckDB at SF=0.01 — those are not committed
     and the corresponding per-dataset extractor test skips when the file is
     missing. They appear in the manifest as forward documentation."""
@@ -124,7 +124,7 @@ def test_smoke_fixtures_committed() -> None:
             assert p.exists(), (
                 f"{entry['name']}/{col_name}: smoke_fixture {rel_path} not committed"
             )
-        # V-D entry uses a different structure.
+        # The synthetic entry uses a different structure.
         cells = fix.get("cells") or []
         for cell in cells:
             p = REPO_ROOT / cell["fixture"]

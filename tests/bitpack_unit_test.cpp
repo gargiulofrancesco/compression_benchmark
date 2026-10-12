@@ -1,5 +1,5 @@
-// Unit tests for runners/core/bitpack.{h,cpp}. Not BPE-specific; OnPair
-// (last baseline) will reuse the same archive. Coverage: bits_for_vocab
+// Unit tests for runners/core/bitpack.{h,cpp}. Not BPE-specific: the
+// repair runner uses the same archive. Coverage: bits_for_vocab
 // boundary values + pack/unpack round-trip at B in {1,7,8,9,12,14,16,17,
 // 18,24,32} + empty + single-token + multi-byte-boundary stress + LSB-first
 // byte-order assertion.

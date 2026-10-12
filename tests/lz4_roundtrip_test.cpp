@@ -1,6 +1,6 @@
 // lz4 round-trip: build column → compress → bulk_decode → assert column equality.
-// Exercises every headline tier (fast accel=1, hc level=9, hc level=12) so
-// cell-add is just a config_json change.
+// Exercises every tier (fast accel=1, hc level=9, hc level=12); the main
+// grid runs only fast.
 
 #include "lz4_runner.h"
 #include "runner_protocol.h"

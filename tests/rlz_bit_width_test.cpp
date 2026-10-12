@@ -1,7 +1,7 @@
-// mixed-width packing gate. At each R% in {0.01, 0.05, 0.25},
+// RLZ mixed-width packing test. At each R% in {0.01, 0.05, 0.25},
 // after compress, verify:
 //   (a) the wire's packed_phrases region size matches
-//       ceil(P_total * (bits_per_pos + bits_per_len + 8) / 8), with the revised
+//       ceil(P_total * (bits_per_pos + bits_per_len + 8) / 8), with the
 //       default bits_per_len == 8 (short-string len field) read from the wire;
 //   (b) bits_per_pos == max(10, ceil_log2(R_len + 1));
 //   (c) bit-tight identity: dict + tokens + boundaries == output_bytes.

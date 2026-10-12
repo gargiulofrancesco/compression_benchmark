@@ -1,4 +1,4 @@
-# `make smoke` is the end-to-end functional gate.
+# `make smoke` is the end-to-end functional check.
 
 PYTHON       ?= python3
 VENV         := .venv
@@ -22,68 +22,31 @@ FIG_PNG      := $(BUILD)/figure_template.png
 .PHONY: smoke setup build cpp-build pytest ctest plot lint clean reproduce-all help datasets a1-smoke a1 a2-smoke a2 a3-smoke a3 a4-smoke a4 a5-smoke a5 a6-smoke a6 a7-smoke a7 bench-smoke bench figures fingerprint install-hooks repo-size
 
 help:
-	@echo "Targets:"
-	@echo "  setup         create .venv and install requirements.txt"
-	@echo "  cpp-build     configure + build runners/ via CMake"
-	@echo "  build         setup + cpp-build"
-	@echo "  smoke         end-to-end functional smoke"
-	@echo "  datasets      materialise the 7 real datasets per experiments/"
-	@echo "                datasets.yaml. NOT part of smoke. Requires ~5 GB"
-	@echo "                disk + bandwidth + duckdb for TPC. Measurement"
-	@echo "                rig only; do NOT run on the dev box without intent."
-	@echo "  a1-smoke      A1 ablation smoke: 1 paired probe"
-	@echo "                against a committed V-D fixture; <1 sec wall."
-	@echo "  a1            A1 headline grid (Fixed{T} × 15 cols)."
-	@echo "                Requires 'make datasets' first. Measurement rig only."
-	@echo "  a2-smoke      A2 ablation smoke: 1 bit-width probe"
-	@echo "                (compress+decode) against a committed V-D fixture;"
-	@echo "                <1 sec wall."
-	@echo "  a2            A2 grid (bit-width sweep × 15 cols)."
-	@echo "                Requires 'make datasets' first. Rig only."
-	@echo "  a3-smoke      A3 ablation smoke: 1 sample_fraction"
-	@echo "                probe against a committed V-D fixture; <1 sec wall."
-	@echo "  a3            A3 grid (sample_fraction sweep × 15"
-	@echo "                cols). Requires 'make datasets' first. Rig only."
-	@echo "  a4-smoke      A4 ablation smoke: 1 capacity probe"
-	@echo "                (compress+decode, peak-RSS M_train) against a"
-	@echo "                committed V-D fixture; <1 sec wall."
-	@echo "  a4            A4 grid (capacity sweep × 15 cols)."
-	@echo "                Requires 'make datasets' first. Rig only."
-	@echo "  a5-smoke      A5 ablation smoke: one zstd block cell"
-	@echo "                + one OnPair flat cell (ra_latency L_ra) against a"
-	@echo "                committed V-D fixture; <1 sec wall."
-	@echo "  a5            A5 grid (block-size sweep on zstd/lz4 vs"
-	@echo "                L_ra p50/p95/p99, OnPair flat line; 2 cols, cold+warm)."
-	@echo "                Requires 'make datasets' first. Rig only."
-	@echo "  a6-smoke      A6 ablation smoke: zstd + fsst + onpair,"
-	@echo "                Zipf(1.0) × {identity,scramble} (ra_latency L_ra) against"
-	@echo "                a committed V-D fixture; <1 sec wall."
-	@echo "  a6            A6 grid (query-distribution sweep + layout"
-	@echo "                bracket vs L_ra; zstd/lz4/fsst/onpair, 2 cols, cold+warm)."
-	@echo "                Requires 'make datasets' first. Rig only."
-	@echo "  a7-smoke      A7 ablation smoke: 1 seed probe (seed=7,"
-	@echo "                compress-only) against a committed V-D fixture; <1 sec."
-	@echo "  a7            A7 grid (shuffle-seed sweep × DBLP titles"
-	@echo "                + ClickBench URL; seed-insensitivity of R for V-G)."
-	@echo "                Requires 'make datasets' first. Rig only."
-	@echo "  bench-smoke   Phase 6 headline smoke: lossless trio (uncompressed/"
-	@echo "                zstd/onpair) on a committed fixture via the canonical"
-	@echo "                orchestrator; verifies the headline wiring. <~30 s."
-	@echo "  bench         Phase 6 headline run (§8.2/F1/T1/T2): 15 real cols × 11"
-	@echo "                lossless baselines → results.sqlite. Requires 'make"
-	@echo "                datasets' first. Rig only."
-	@echo "  figures       Phase 6 figures: render all F/T/A figures from the"
-	@echo "                *_results.sqlite stores into build/figures/."
-	@echo "  install-hooks Install the versioned git pre-commit guard"
-	@echo "                (core.hooksPath=tools/git-hooks) that blocks committing"
-	@echo "                build/ .venv/ datasets/ or files >10 MiB. Run after 'git init'."
-	@echo "  repo-size     Report what git would actually track + the 10 largest"
-	@echo "                tracked files (sanity-check before pushing)."
-	@echo "  pytest        run Python tests"
-	@echo "  ctest         run C++ unit tests (excludes LABELS=stress)"
-	@echo "  plot          render figure template from \$$DB"
-	@echo "  lint          run CI grep audits (FCSD-skip etc.)"
-	@echo "  clean         remove build/ and .venv/"
+	@echo "To reproduce the paper, all of it or a part, use ./reproduce.sh"
+	@echo "(run without arguments it lists its stages; see also README.md)."
+	@echo "The make targets are its building blocks:"
+	@echo "  setup        create .venv and install requirements.txt"
+	@echo "  build        setup, then configure and build every runner with CMake"
+	@echo "  ctest        C++ unit tests"
+	@echo "  pytest       Python tests"
+	@echo "  lint         source checks"
+	@echo "  smoke        build, tests, and an end-to-end run of every baseline"
+	@echo "               on a committed synthetic column; ends with SMOKE OK"
+	@echo "  datasets     download and materialise the paper's six columns"
+	@echo "               (about 14 GB of downloads; checksums verified)"
+	@echo "  bench        main grid (Table II): 6 columns x 11 configurations"
+	@echo "               into build/results.sqlite; needs datasets"
+	@echo "  bench-smoke  the same wiring on a committed fixture"
+	@echo "  a1 .. a7     one ablation grid each; need datasets"
+	@echo "                 a1 adaptive vs fixed thresholds   a5 block size"
+	@echo "                 a2 dictionary capacity (ratio)    a6 query skew"
+	@echo "                 a3 training budget                a7 shuffle seeds"
+	@echo "                 a4 dictionary capacity (timings)"
+	@echo "  aN-smoke     the same driver on a committed fixture"
+	@echo "  fingerprint  write build/env_fingerprint.json (CPU features, clock control)"
+	@echo "  figures      diagnostic plots of whichever result stores exist"
+	@echo "  repo-size    what git tracks, and the largest tracked files"
+	@echo "  clean        remove build/ and .venv/"
 
 $(VENV)/.installed: requirements.txt
 	$(PYTHON) -m venv $(VENV)
@@ -138,16 +101,17 @@ smoke: build lint
 	@echo "SMOKE OK"
 
 datasets: setup
-	# — materialise the 7 real datasets per experiments/
-	# datasets.yaml. Network IO + duckdb (TPC); NOT part of `make smoke`.
-	# Smoke uses committed fixtures under testdata/datasets/ instead.
+	# Download and materialise the six columns of the paper per
+	# experiments/datasets.yaml (about 14 GB of downloads; TPC-H is generated
+	# with DuckDB). NOT part of `make smoke`, which uses the committed fixtures
+	# under testdata/datasets/. Every column is compared with the SHA-256
+	# recorded in the manifest; a difference fails the target.
 	PYTHONPATH=. $(VPY) -m tools.datasets.prepare --all \
-	    --raw-dir datasets/raw --columns-dir datasets/materialized \
-	    --update-checksums
+	    --raw-dir datasets/raw --columns-dir datasets/materialized
 
 a1-smoke: build
-	# A1 ablation smoke gate. Single paired probe
-	# against the committed V-D fixture; runs in <1 sec wall.
+	# A1 ablation smoke run. Single paired probe
+	# against the committed synthetic fixture; runs in <1 sec wall.
 	# NOT wired into `make smoke` — A1 is a separate experiment runner.
 	@mkdir -p $(BUILD)
 	PYTHONPATH=. $(VPY) -m experiments.a1_driver \
@@ -156,8 +120,8 @@ a1-smoke: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a1: build
-	# A1 headline grid. Requires `make datasets` first.
-	# NOT part of `make smoke`. Measurement rig only.
+	# A1 full grid. Requires `make datasets` first.
+	# NOT part of `make smoke`.
 	PYTHONPATH=. $(VPY) -m experiments.a1_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a1-cells experiments/a1_cells.yaml \
@@ -166,8 +130,8 @@ a1: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a2-smoke: build
-	# A2 ablation smoke gate. Single bit-width probe
-	# (compress+bulk_decode) against the committed V-D fixture; <1 sec wall.
+	# A2 ablation smoke run. Single bit-width probe
+	# (compress+bulk_decode) against the committed synthetic fixture; <1 sec wall.
 	# NOT wired into `make smoke` — A2 is a separate experiment runner.
 	@mkdir -p $(BUILD)
 	PYTHONPATH=. $(VPY) -m experiments.a2_driver \
@@ -177,7 +141,7 @@ a2-smoke: build
 
 a2: build
 	# A2 bit-width sweep. Requires `make datasets` first.
-	# NOT part of `make smoke`. Measurement rig only.
+	# NOT part of `make smoke`.
 	PYTHONPATH=. $(VPY) -m experiments.a2_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a2-cells experiments/a2_cells.yaml \
@@ -186,8 +150,8 @@ a2: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a3-smoke: build
-	# A3 ablation smoke gate. Single sample_fraction probe
-	# against the committed V-D fixture; runs in <1 sec wall.
+	# A3 ablation smoke run. Single sample_fraction probe
+	# against the committed synthetic fixture; runs in <1 sec wall.
 	# NOT wired into `make smoke` — A3 is a separate experiment runner.
 	@mkdir -p $(BUILD)
 	PYTHONPATH=. $(VPY) -m experiments.a3_driver \
@@ -197,7 +161,7 @@ a3-smoke: build
 
 a3: build
 	# A3 sample_fraction sweep. Requires `make datasets` first.
-	# NOT part of `make smoke`. Measurement rig only.
+	# NOT part of `make smoke`.
 	PYTHONPATH=. $(VPY) -m experiments.a3_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a3-cells experiments/a3_cells.yaml \
@@ -206,8 +170,8 @@ a3: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a4-smoke: build
-	# A4 ablation smoke gate. Single capacity probe
-	# (compress+bulk_decode, peak-RSS M_train) against the committed V-D
+	# A4 ablation smoke run. Single capacity probe
+	# (compress+bulk_decode, peak-RSS M_train) against the committed synthetic
 	# fixture; <1 sec wall. NOT wired into `make smoke` — A4 is a separate
 	# experiment runner.
 	@mkdir -p $(BUILD)
@@ -218,7 +182,7 @@ a4-smoke: build
 
 a4: build
 	# A4 capacity sweep. Requires `make datasets` first.
-	# NOT part of `make smoke`. Measurement rig only.
+	# NOT part of `make smoke`.
 	PYTHONPATH=. $(VPY) -m experiments.a4_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a4-cells experiments/a4_cells.yaml \
@@ -227,8 +191,8 @@ a4: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a5-smoke: build
-	# A5 ablation smoke gate. One zstd block-decode cell + one
-	# OnPair flat-line cell (the new `ra_latency` op) against the committed V-D
+	# A5 ablation smoke run. One zstd block-decode cell + one
+	# OnPair flat-line cell (the `ra_latency` op) against the committed synthetic
 	# fixture; <1 sec wall. NOT wired into `make smoke` — A5 is a separate
 	# experiment runner. Drives the zstd + onpair runners via --build-root.
 	@mkdir -p $(BUILD)
@@ -240,9 +204,11 @@ a5-smoke: build
 a5: build
 	# A5 block-size sweep (zstd/lz4 L_ra degrade vs block size;
 	# OnPair flat). Requires `make datasets` first. NOT part of `make smoke`.
-	# Measurement rig only. NOTE: true FS-cache-cold cells need an OS page-cache
-	# drop between runs (macOS `sudo purge` / Linux `echo 3 > drop_caches`); the
-	# op's warmup flag only controls the in-process pre-pass.
+	# Latencies need x86-64 with an invariant TSC; cells are recorded as
+	# refused-env otherwise. NOTE: true FS-cache-cold cells need
+	# an OS page-cache drop between runs (macOS `sudo purge` / Linux
+	# `echo 3 > drop_caches`); the op's warmup flag only controls the in-process
+	# pre-pass.
 	PYTHONPATH=. $(VPY) -m experiments.a5_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a5-cells experiments/a5_cells.yaml \
@@ -251,9 +217,9 @@ a5: build
 	    --build-root $(BUILD)
 
 a6-smoke: build
-	# A6 ablation smoke gate. zstd (block) + fsst + onpair
+	# A6 ablation smoke run. zstd (block) + fsst + onpair
 	# (per-string) under Zipf(1.0) × {identity, scramble} via the reused
-	# `ra_latency` op (runners/core/query_sampler.h) against the committed V-D
+	# `ra_latency` op (runners/core/query_sampler.h) against the committed synthetic
 	# fixture; <1 sec wall. NOT wired into `make smoke`. Drives 3 runners via
 	# --build-root.
 	@mkdir -p $(BUILD)
@@ -264,15 +230,17 @@ a6-smoke: build
 
 a6: build
 	# A6 query-distribution sweep + layout bracket vs L_ra
-	# (zstd/lz4 block baselines degrade under scramble; fsst/onpair per-string
-	# flat). Block size fixed at the headline 1 MB budget. Requires
-	# `make datasets` first. NOT part of `make smoke`. Measurement rig only.
+	# (zstd/lz4 decode a block per access; fsst/onpair decode one row).
+	# Block size fixed at the headline 1 MB budget. Requires
+	# `make datasets` first. NOT part of `make smoke`. Latencies need x86-64
+	# with an invariant TSC (refused-env otherwise).
 	# NOTE: true FS-cache-cold cells need an OS page-cache drop between runs
 	# (macOS `sudo purge` / Linux `echo 3 > drop_caches`); the op's warmup flag
-	# only controls the in-process pre-pass. ~144 cells (4 baselines × 2 cols ×
-	# 2 cache × 9 dist/layout) — confirm wall-time before running; the cells
-	# yaml carries a fallback_distributions subset that KEEPS the layout bracket
-	# + per-string baseline if the budget is exceeded.
+	# only controls the in-process pre-pass. 144 cells (4 baselines × 2 cols ×
+	# 2 cache × 9 dist/layout); the cells yaml lists a smaller
+	# fallback_distributions subset that KEEPS the layout bracket + per-string
+	# baseline, for use when the full grid takes too long (not applied
+	# automatically).
 	PYTHONPATH=. $(VPY) -m experiments.a6_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a6-cells experiments/a6_cells.yaml \
@@ -281,8 +249,8 @@ a6: build
 	    --build-root $(BUILD)
 
 a7-smoke: build
-	# A7 ablation smoke gate. Single seed probe (seed=7,
-	# compress-only) against the committed V-D fixture; <1 sec wall.
+	# A7 ablation smoke run. Single seed probe (seed=7,
+	# compress-only) against the committed synthetic fixture; <1 sec wall.
 	# NOT wired into `make smoke` — A7 is a separate experiment runner.
 	@mkdir -p $(BUILD)
 	PYTHONPATH=. $(VPY) -m experiments.a7_driver \
@@ -291,9 +259,9 @@ a7-smoke: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 a7: build
-	# A7 shuffle-seed sweep (seed-insensitivity of R for V-G;
-	# DBLP titles + ClickBench URL only). Requires `make datasets` first.
-	# NOT part of `make smoke`. Measurement rig only.
+	# A7 shuffle-seed sweep (seed-insensitivity of the ratio R;
+	# Amazon titles + MS MARCO URL only). Requires `make datasets` first.
+	# NOT part of `make smoke`.
 	PYTHONPATH=. $(VPY) -m experiments.a7_driver \
 	    --datasets-manifest experiments/datasets.yaml \
 	    --a7-cells experiments/a7_cells.yaml \
@@ -302,8 +270,8 @@ a7: build
 	    --runner-path $(BUILD)/runners/onpair/onpair_runner
 
 bench-smoke: build
-	# Phase 6 headline smoke gate. Generates a 3-baseline cells doc backed by
-	# the committed V-D 1000-row fixture (dataset_kind=real) and drives it through
+	# Main-grid smoke run. Generates a 3-baseline cells doc backed by the
+	# committed synthetic 1000-row fixture (dataset_kind=real) and drives it through
 	# the canonical orchestrator — verifies the full headline wiring on committed
 	# data. NOT wired into `make smoke`. Writes a throwaway DB.
 	@mkdir -p $(BUILD)
@@ -320,11 +288,12 @@ bench-smoke: build
 	@echo "bench-smoke: OK"
 
 bench: build
-	# Phase 6 headline run (§8.2 / F1 / T1 / T2): full grid = every real column
-	# in datasets.yaml × the 11 lossless baselines in headline_roster.yaml,
-	# driven through the canonical orchestrator (G6 + round-trip verified) into
-	# the headline results.sqlite. Requires `make datasets` first. NOT part of
-	# `make smoke`. Measurement rig only.
+	# Main grid (Table II, Fig. 4): every column tagged `headline: true` in
+	# datasets.yaml × the 11 lossless baselines in headline_roster.yaml,
+	# driven through the canonical orchestrator (round trip and prefix search
+	# verified per cell) into the headline results.sqlite. Requires
+	# `make datasets` first. Outside the paper's setup (performance governor,
+	# turbo off) the rows are labelled dev-only. NOT part of `make smoke`.
 	# Start from a clean store: the canonical headline grid is a fresh run.
 	# a*_results.sqlite are separate stores; smoke uses smoke_results.sqlite.
 	@rm -f $(DB) $(CSV)
@@ -341,14 +310,15 @@ bench: build
 	    --workdir  $(BUILD)/headline_workdir
 
 fingerprint: setup
-	# MIGRATION §3 — write build/env_fingerprint.json (AVX-512 / FSST-dispatch
+	# Write build/env_fingerprint.json (AVX-512 / FSST-dispatch
 	# fairness record + L_ra timing prereqs). Needs cpp-build for the authoritative
 	# FSST-object disassembly; run after 'make build'. Safe to run standalone.
 	PYTHONPATH=. $(VPY) -m tools.env_fingerprint --build-root $(BUILD)
 
 figures: setup
-	# Phase 6 — render every paper figure/table from whichever *_results.sqlite
-	# stores are present (headline results.sqlite + a*_results.sqlite). Missing
+	# Render diagnostic figures/tables from whichever *_results.sqlite
+	# stores are present (headline results.sqlite + a*_results.sqlite). The
+	# paper's own figures and tables come from `./reproduce.sh paper`. Missing
 	# stores are skipped with a note; safe to run after a partial set of runs.
 	$(VPY) -m tools.plot.render_all --build-root $(BUILD) --out $(BUILD)/figures
 

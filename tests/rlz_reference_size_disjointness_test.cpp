@@ -1,4 +1,4 @@
-// multi-cell tradeoff: across the three R% cells {1%, 5%, 25%},
+// RLZ dictionary/token tradeoff: across the three R% values {1%, 5%, 25%},
 // dict_bytes is strictly monotonic-increasing and tokens_bytes is strictly
 // monotonic-decreasing.
 //

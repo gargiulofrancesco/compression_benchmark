@@ -1,15 +1,16 @@
-"""step 2 — A1 ablation driver.
+"""A1 ablation driver (adaptive vs fixed thresholds; Fig. 6, left).
 
-Drives the OnPair runner via the standard NDJSON protocol with the new
+Drives the OnPair runner via the standard NDJSON protocol with the
 `op="held_out_compress"` envelope. For each (dataset, column, T) cell in
 experiments/a1_cells.yaml, invokes the protocol to produce one paired
 (Fixed{T}, matched-Dynamic{f}) measurement; writes a single row to
 build/a1_results.sqlite per `schema/a1_results.sql`.
 
 Modes:
-  --smoke         : single cell against testdata/datasets/dblp__titles.fixture.col;
-                    splits inline via orchestrator.heldout.split_heldout. <1 sec.
-  default         : full headline grid against datasets/materialized/<dataset>/
+  --smoke         : single cell against the committed synthetic fixture named in
+                    a1_cells.yaml; splits inline via
+                    orchestrator.heldout.split_heldout. <1 sec.
+  default         : full grid against datasets/materialized/<dataset>/
                     train/heldout column files (produced by `make datasets`).
 
 This driver does NOT use the standard orchestrator (orchestrator/orchestrate.py)
@@ -204,7 +205,7 @@ def _insert_row(conn: sqlite3.Connection, *, run_id: str, cell_id: str,
 
 
 def _run_smoke(runner_path: Path, db_path: Path) -> int:
-    """Single-cell A1 smoke: T=10 × DBLP titles fixture; inline 800/200 split."""
+    """Single-cell A1 smoke: T=10 × synthetic fixture; inline 800/200 split."""
     from orchestrator.heldout import split_heldout
 
     cells_yaml = REPO_ROOT / "experiments" / "a1_cells.yaml"

@@ -1,14 +1,15 @@
-// Uncompressed runner: §8.10 floor reference + stub baseline.
+// Uncompressed runner: the reference floor (plain bytes plus offsets).
 //
 // "Compression" is a verbatim copy of the input Column. Sub-counters reflect
 // the natural memory cost of the Arrow-style layout the column already pays:
 //   dict_bytes       = 0
 //   tokens_bytes     = total payload bytes
 //   boundaries_bytes = (N+1) * 4
-// Ratio under the §12.6 formula is therefore 1.0 minus the boundary tax.
+// The payload-only ratio input_bytes / (dict_bytes + tokens_bytes) is
+// therefore exactly 1.0.
 //
 // prefix_search delegates to runners/core/scan_prefix.h — this IS the
-// canonical bit-equality reference for the G6 gate.
+// canonical reference for the prefix-search check.
 
 #include "runner_protocol.h"
 #include "scan_prefix.h"
@@ -132,10 +133,16 @@ public:
                            const std::string& needle,
                            const std::string& out_path,
                            const std::string& /*cfg*/) override {
-        Column c = read_column(in_path);
+        Column c = read_column(in_path);                       // UNTIMED: file read
         std::vector<uint32_t> hits;
+        const auto t0 = std::chrono::steady_clock::now();
         size_t n_hits = scan_prefix(c, needle, hits);
+        const uint64_t t_scan_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t0).count());
 
+        // UNTIMED: hit-list materialisation is part of scan_prefix above, but
+        // serialising that list is not part of the in-memory predicate cost.
         std::ofstream f(out_path, std::ios::binary);
         if (!f) throw std::runtime_error("prefix_search: cannot open " + out_path);
         uint32_t nh = static_cast<uint32_t>(n_hits);
@@ -145,17 +152,22 @@ public:
                     static_cast<std::streamsize>(hits.size() * sizeof(uint32_t)));
         }
         OpResult r;
-        r.metrics.emplace_back("n_hits",   static_cast<double>(n_hits));
-        r.metrics.emplace_back("num_rows", static_cast<double>(c.num_rows()));
+        r.metrics.emplace_back("n_hits",             static_cast<double>(n_hits));
+        r.metrics.emplace_back("num_rows",           static_cast<double>(c.num_rows()));
+        r.metrics.emplace_back("needle_bytes",       static_cast<double>(needle.size()));
+        r.metrics.emplace_back("t_query_prepare_ns", 0.0);
+        r.metrics.emplace_back("t_scan_ns",          static_cast<double>(t_scan_ns));
+        r.metrics.emplace_back("t_search_ns",        static_cast<double>(t_scan_ns));
         return r;
     }
 
-    // Random-access latency FLOOR (§8.4 reference). The uncompressed model is
+    // Random-access latency FLOOR (the Raw row of Table III). The uncompressed model is
     // per-string by construction: row i is a direct (offset[i], offset[i+1])
     // slice — no codec, just offset arithmetic + the payload read. This is the
     // lower bound every compressed per-string baseline is measured against.
     // Same rdtscp primitive + query sampler as the other ra_latency runners; no
-    // file I/O in the timed loop. Refuses cleanly off the controlled x86 rig.
+    // file I/O in the timed loop. Returns refused-env unless on x86-64 with
+    // an invariant TSC.
     OpResult ra_latency(const std::string& in_path,
                         const std::string& /*out_path*/,
                         const std::string& cfg_json) override {

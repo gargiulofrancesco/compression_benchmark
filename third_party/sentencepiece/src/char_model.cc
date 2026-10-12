@@ -13,14 +13,16 @@
 // limitations under the License.!
 
 #include "char_model.h"
+
+#include "third_party/absl/strings/string_view.h"
 #include "util.h"
 
 namespace sentencepiece {
 namespace character {
 
-Model::Model(const ModelProto &model_proto) {
+Model::Model(const ModelProto& model_proto) {
   model_proto_ = &model_proto;
-  InitializePieces();
+  InitializePieces(/* use_reserved_id_map= */ true);
 }
 
 Model::~Model() {}

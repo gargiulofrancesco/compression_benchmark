@@ -1,4 +1,4 @@
-// BPE card mandate: empty-column refusal. Asserts:
+// BPE empty-column refusal. Asserts:
 //   - N=0       → status='unsupported'
 //   - all rows empty (N>0, input_bytes=0) → status='unsupported'
 

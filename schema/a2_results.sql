@@ -1,25 +1,24 @@
--- Phase 5 step 4 — A2 ablation results store (bit-width sweep).
+-- A2 ablation results store (bit-width sweep).
 -- One row per (dataset, column, bits). For each cell, OnPair compresses the
 -- FULL materialised column at bit-width b (DynamicThreshold{0.15}, seed=42 held
--- constant — only b sweeps) and then bulk-decodes it. The headline outputs
--- (plan §12.7 A2 row) are R (compression ratio = input_bytes / output_bytes),
+-- constant — only b sweeps) and then bulk-decodes it. The main outputs
+-- are R (compression ratio = input_bytes / output_bytes),
 -- T_d (decode time) and |D| (dictionary size, recorded as dict_bytes). T_c
 -- (compress time) is recorded as a secondary diagnostic.
 --
--- DESIGN NOTE (distinct from A1/A3): A2 adds NO new runner op and NO upstream
+-- DESIGN NOTE (distinct from A1/A3): A2 needs NO dedicated runner op and NO upstream
 -- OnPair change. Its three quantities all have direct headline-op equivalents,
 -- so a2_driver.py reuses the existing `compress` + `bulk_decode` ops and reads
--- their dispatch-loop `t_op_ns` as T_c / T_d. This keeps A2's decode-time
--- definition identical to the §8.2 headline (t_op_ns over the whole op,
--- including I/O), so A2 stays directly comparable to the headline numbers —
--- which is the point, since A2's RQ is RQ1.  A1/A3 needed a bespoke composite
+-- their dispatch-loop `t_op_ns` as T_c / T_d. t_op_ns covers the whole op,
+-- including I/O, so these times are not the codec-only timers behind
+-- Table II.  A1/A3 needed a bespoke composite
 -- op (held_out_compress) only because held-out train/encode has no headline
 -- equivalent; A2 does not.
 --
 -- Consumed by experiments/a2_driver.py at db init time. Separate file from the
 -- headline results.sqlite AND from a1_results.sqlite / a3_results.sqlite (each
--- ablation owns its own store, per the Phase 5 step 2 storage adjudication).
--- A2 plots (Phase 6) read from here.
+-- ablation owns its own store).
+-- OnPair's curve in Fig. 7 is drawn from here.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -41,8 +40,7 @@ CREATE TABLE IF NOT EXISTS a2_results (
     boundaries_bytes             INTEGER NOT NULL,
     output_bytes                 INTEGER NOT NULL,
     ratio                        REAL    NOT NULL,   -- R = input_bytes / output_bytes
-    -- Timing (nanoseconds; dispatch-loop t_op_ns over the whole op, incl. I/O,
-    -- matching the §8.2 headline definition):
+    -- Timing (nanoseconds; dispatch-loop t_op_ns over the whole op, incl. I/O):
     compress_ns                  REAL    NOT NULL,   -- T_c (secondary diagnostic)
     decode_ns                    REAL    NOT NULL,   -- T_d (headline; bulk_decode)
     -- bookkeeping:

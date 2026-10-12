@@ -1,7 +1,7 @@
-"""— figure/table renderer smoke gate.
+"""Smoke test of the diagnostic figure/table renderers (tools/plot).
 
 Fabricates minimal status='ok' stores matching each schema (so the L_ra figures
-exercise too — on this non-x86 box the real a5/a6 smoke produces only
+are exercised too — on a non-x86 machine the real a5/a6 smoke produces only
 refused-env rows), runs every renderer, and asserts each emits its artifacts.
 Also asserts render_all over a directory of all fabricated stores produces the
 full set, and that renderers return [] (not raise) on absent stores.
@@ -73,7 +73,7 @@ def test_headline_figures(tmp_path: Path) -> None:
     assert "F1_pareto.png" in names
     assert "T1_ratio.md" in names and "T1_ratio.csv" in names
     assert any("T2_" in n for n in names)
-    # zstd ratio = 1000/500 = 2.0 appears in the T1 table.
+    # zstd ratio = 1000/500 = 2.0 appears in the T1_ratio table.
     assert "2.000" in (out / "T1_ratio.md").read_text()
 
 

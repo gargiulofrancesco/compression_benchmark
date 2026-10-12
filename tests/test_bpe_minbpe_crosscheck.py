@@ -1,6 +1,6 @@
 """minbpe independent round-trip cross-check for the `bpe` baseline.
 
-ROLE (demoted): minbpe is NOT a baseline and NOT on any measurement
+ROLE: minbpe is NOT a baseline and NOT on any measurement
 path. It is a test-only, independent round-trip cross-check. The canonical BPE
 baseline is SentencePiece BPE driven through the GPT-2 byte<->unicode bijection
 (runners/bpe/); its PRIMARY correctness gate is the exhaustive 0x00..0xFF

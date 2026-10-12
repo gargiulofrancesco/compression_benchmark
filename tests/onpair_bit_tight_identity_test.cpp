@@ -1,9 +1,8 @@
-// OnPair bit-tight identity gate (target ninth bit-tight baseline).
+// OnPair bit-tight identity test.
 // At every bits ∈ {9, 12, 14, 16}, the headline metrics MUST satisfy
 //   dict_bytes + tokens_bytes + boundaries_bytes ≡ output_bytes (exactly).
 // This is the structural guarantee of the library's wire format combined
-// with the sub-counter mapping (NON-collapse, fifth
-// natural split in the lineup).
+// with the sub-counter mapping (natural dict/tokens split).
 
 #include "onpair_runner.h"
 #include "runner_protocol.h"

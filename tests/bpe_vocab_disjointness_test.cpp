@@ -1,8 +1,8 @@
-// BPE card load-bearing for multi-cell tradeoff visual.
-// Compress the same column at all four headline V values; assert:
-//   dict_bytes  strictly increasing in V  (M grows with vocab)
-//   tokens_bytes strictly decreasing in V (fewer tokens per row at large V)
-// This is the structural curve §8.6 renders.
+// BPE dictionary/token tradeoff across vocabulary sizes.
+// Compress the same column at all four accepted V values; expect:
+//   dict_bytes  increasing in V  (the model grows with vocab)
+//   tokens_bytes decreasing in V (fewer tokens per row at large V)
+// The exact assertions, weaker than strict monotonicity, are stated below.
 
 #include "bpe_runner.h"
 #include "runner_protocol.h"
@@ -85,7 +85,7 @@ int main() {
                   << "\n";
     }
 
-    // BPE card's monotonicity holds on real corpora; on
+    // Strict monotonicity holds on real corpora; on
     // synthetic columns at very large V the trainer saturates (no more
     // useful merges → T plateaus → tokens_bytes can grow purely because
     // B = ceil(log2(V)) widens). We require the structural property to

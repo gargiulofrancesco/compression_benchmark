@@ -1,15 +1,15 @@
 #pragma once
-// step 6 (A5) — random-access latency summary statistics.
+// Random-access latency summary statistics.
 //
-// Shared by the `ra_latency` op of the block-based baselines (zstd, lz4) and
-// OnPair. Each ra_latency op times N in-process single-string random accesses
+// Shared by the `ra_latency` op of every runner. Each ra_latency op times N
+// in-process single-string random accesses
 // (no file I/O in the loop) and hands the per-sample nanosecond costs here to
-// reduce them to the p50/p95/p99 (+ mean/min/max) summary reported in
-// a5_results (.6 L_ra, §12.7 row A5).
+// reduce them to the p50/p95/p99 (+ mean/min/max) summary reported in the
+// point-access stores (ra_headline_results, a5_results, a6_results).
 //
 // Percentile convention: nearest-rank on the sorted sample vector
 // (rank = ceil(p/100 · n), clamped to [1, n]). Deterministic, no
-// interpolation — matches "p50/p95/p99 in tables" (§12.5) and keeps the
+// interpolation — keeps the
 // values reproducible across runs given a fixed query seed.
 
 #include <algorithm>

@@ -1,4 +1,4 @@
-// G6 self-consistency: fsst's prefix_search hit-set must match the canonical
+// Prefix-search check: fsst's prefix_search hit-set must match the canonical
 // scan_prefix output bytewise on the 16 fixed needles.
 
 #include "fsst_runner.h"

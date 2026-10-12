@@ -1,6 +1,6 @@
-"""step 8 — A7 driver smoke gate.
+"""A7 driver smoke test.
 
-Invokes `python -m experiments.a7_driver --smoke` against the committed V-D
+Invokes `python -m experiments.a7_driver --smoke` against the committed synthetic
 fixture (used whole — A7 is a full-column experiment); asserts a7_results.sqlite
 contains exactly one row with valid metrics and the non-default smoke seed
 plumbed through. Skipped if the OnPair runner binary is not built.
@@ -55,7 +55,7 @@ def test_a7_smoke_end_to_end(tmp_path: Path) -> None:
     assert bits == 16             # held at headline default.
     assert frac == 0.15
     assert strategy == "dynamic"
-    assert n_rows == 1000         # V-D fixture is 1000 rows, used whole.
+    assert n_rows == 1000         # The fixture is 1000 rows, used whole.
     assert in_b > 0
 
     # Bit-tight identity for the full column.

@@ -96,7 +96,7 @@ int run_protocol_loop(Runner& r, const std::string& build_flags_sha) {
             else if (op == "prefix_search")  result = r.prefix_search(in_path, env.get("needle"),
                                                                        out_path, config_json);
             else if (op == "held_out_compress") {
-                // step 2 A1 ablation. Reads two input paths:
+                // A1/A3 ablations. Reads two input paths:
                 // `train_input_path` + `heldout_input_path`. OnPair-only;
                 // other runners inherit the ABC default and respond
                 // status='unsupported' cleanly.
@@ -105,11 +105,11 @@ int run_protocol_loop(Runner& r, const std::string& build_flags_sha) {
                                              out_path, config_json);
             }
             else if (op == "ra_latency") {
-                // step 6 A5 ablation. Times n_samples in-process random
+                // Times n_samples in-process random
                 // accesses on the compressed column at `input_path`; emits
-                // L_ra p50/p95/p99 (+ mean/min/max) in result.metrics. Block-
-                // based baselines (zstd, lz4) + OnPair override; other runners
-                // inherit the ABC default and respond status='unsupported'.
+                // L_ra p50/p95/p99 (+ mean/min/max) in result.metrics. A
+                // runner that does not override it inherits the ABC default
+                // and responds status='unsupported'.
                 result = r.ra_latency(in_path, out_path, config_json);
             }
             else {

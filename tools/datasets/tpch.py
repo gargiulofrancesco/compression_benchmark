@@ -1,13 +1,13 @@
 """TPC-H extractor via DuckDB's tpch extension — TPC academic.
 
-Phase 5 step 1 caveat (locked at plan time): DuckDB's `dbgen(sf=N)` produces
+Caveat: DuckDB's `dbgen(sf=N)` produces
 pipeline-reproducible TPC-H tables but is NOT separately verified bit-identical
-to the reference TPC dbgen tool. The duckdb version + SF + post-extraction
-SHA-256 are pinned in experiments/datasets.yaml; bit-identity-to-reference is
-a Phase 7 legal-check gate (plan R7).
+to the reference TPC dbgen tool. The duckdb version is pinned in
+requirements.txt, the SF and the post-extraction SHA-256 in
+experiments/datasets.yaml.
 
-`SF=10` chosen so the load-bearing l_comment column (~1.6 GB) sits 5–10× above
-L3-cache capacity — throughput numbers reflect main-memory behaviour, not
+`SF=10` keeps the reported columns (p_name 62 MiB, c_comment 104 MiB) larger
+than the L3 cache — throughput numbers reflect main-memory behaviour, not
 cache-resident artefacts.
 """
 from __future__ import annotations
@@ -44,7 +44,16 @@ def download(target_dir: Path, manifest_entry: dict) -> Path:
     con.execute("INSTALL tpch")
     con.execute("LOAD tpch")
     con.execute(f"CALL dbgen(sf={sf})")
-    for col_name, (table, column) in _COLUMN_TO_DUCKDB.items():
+    # Materialise only the columns declared by the selected manifest. The main
+    # datasets.yaml declares all five and is therefore unchanged; focused
+    # experiment manifests can avoid writing the 1.6 GiB lineitem comment dump
+    # when they need only p_name/c_comment.
+    declared = [column["name"] for column in manifest_entry.get("columns", [])]
+    unknown = sorted(set(declared) - set(_COLUMN_TO_DUCKDB))
+    if unknown:
+        raise ValueError(f"unknown TPC-H columns in manifest: {unknown}")
+    for col_name in declared:
+        table, column = _COLUMN_TO_DUCKDB[col_name]
         out = target_dir / f"{col_name}.tsv"
         con.execute(
             f"COPY (SELECT {column} FROM {table}) TO '{out}' "

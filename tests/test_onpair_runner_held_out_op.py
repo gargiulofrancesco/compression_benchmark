@@ -1,4 +1,4 @@
-"""step 2 — end-to-end NDJSON probe of the new held_out_compress op.
+"""End-to-end NDJSON probe of the held_out_compress op.
 
 Confirms:
   - The OnPair runner accepts op="held_out_compress".

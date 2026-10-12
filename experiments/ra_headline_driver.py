@@ -1,16 +1,16 @@
-"""ICDE — headline random-access latency grid (paper §8.4 / T2 Access
-column + F5 CDF).
+"""Point-access latency grid (stage `access`; Table III and Fig. 5).
 
-For every headline column × every ra_latency-capable baseline, compress at the
-headline config and time uniform single-string accesses in-process via the shared
-`ra_latency` op (runners/core/query_sampler.h + ra_timer_tsc.h), reporting
-L_ra p50/p95/p99 (+ mean/min/max).
+For every column of the paper and every baseline, compress with the main
+grid's configuration and time uniform single-row accesses in-process through
+the shared `ra_latency` op (runners/core/query_sampler.h + ra_timer_tsc.h),
+reporting the median, p95 and p99 (and mean, minimum, maximum).
 
-Roster = the 8 headline systems that implement ra_latency:
+Roster:
   per-string : uncompressed, fsst, bpe (V=2^14), bpe_v65536 (V=2^16), rlz, onpair
   block      : zstd (level 3, 1 MiB), lz4 (1 MiB)
-`repair` has no random-access entry point (full-column decode); the paper derives
-its access cost from bulk-decode time and footnotes it.
+  grammar    : repair, which reaches a row by descending the grammar through an
+               access index built when the column is loaded; the index is
+               counted in neither its ratio nor its compression time
 
 Query counts: 10^6 for per-string baselines; 10^5 for block baselines (each
 access decodes a 1 MiB block, ~10^2 us — 10^5 keeps the cell under ~1 min while
@@ -18,7 +18,7 @@ leaving p99 well-resolved).
 
 Writes one row per (column × baseline) to build/ra_headline_results.sqlite
 (schema inline below). Warm cache (one decode pre-pass), uniform distribution,
-identity layout, seed 42 — matching the Table-2 access protocol.
+identity layout, seed 42.
 
 Usage:
   PYTHONPATH=. .venv/bin/python -m experiments.ra_headline_driver \
@@ -56,7 +56,7 @@ RUNNER_REL = {
     "bpe_v65536":   Path("runners") / "bpe" / "bpe_runner",
     "rlz":          Path("runners") / "rlz" / "rlz_runner",
     "onpair":       Path("runners") / "onpair" / "onpair_runner",
-    # repair: per-string grammar-descent RA. Driven separately
+    # repair: per-string grammar-descent RA. reproduce.sh drives it separately
     # (--only repair) because its in-driver compression is minutes per column.
     "repair":       Path("runners") / "repair" / "repair_runner",
 }
@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS ra_headline_results (
   l_ra_mean_ns REAL, l_ra_p50_ns REAL, l_ra_p95_ns REAL, l_ra_p99_ns REAL,
   l_ra_min_ns REAL, l_ra_max_ns REAL,
   input_bytes INTEGER, compressed_bytes INTEGER,
-  config_json TEXT, notes TEXT, ts_utc TEXT
+  config_json TEXT, notes TEXT, ts_utc TEXT,
+  ra_index_bytes INTEGER
 );
 """
 
@@ -108,7 +109,10 @@ def _recv(p):
 
 
 def drive(build_root: Path, columns_dir: Path, db: Path,
-          only: str | None = None, cheap_first: bool = False) -> int:
+          only: str | None = None, cheap_first: bool = False,
+          skip: frozenset[str] = frozenset(),
+          baselines: frozenset[str] = frozenset(),
+          columns: frozenset[str] = frozenset()) -> int:
     conn = sqlite3.connect(db)
     conn.executescript(SCHEMA)
     run_id = uuid.uuid4().hex
@@ -122,8 +126,12 @@ def drive(build_root: Path, columns_dir: Path, db: Path,
     for ds, fn in cols:
         col_path = columns_dir / ds / fn
         col_name = fn.removesuffix(".col")
+        if columns and f"{ds}/{col_name}" not in columns:
+            continue
         for baseline, rel in RUNNER_REL.items():
-            if only is not None and baseline != only:
+            if (only is not None and baseline != only) or baseline in skip:
+                continue
+            if baselines and baseline not in baselines:
                 continue
             n_q = N_BLOCK if baseline in BLOCK_BASELINES else N_PER_STRING
             cell_id = f"ra-{ds}-{col_name}-{baseline}"
@@ -181,14 +189,17 @@ def drive(build_root: Path, columns_dir: Path, db: Path,
                 failures += 1
             conn.execute(
                 "INSERT OR REPLACE INTO ra_headline_results VALUES "
-                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (run_id, cell_id, ds, col_name, baseline, n_q, status,
                  metrics.get("l_ra_mean_ns"), metrics.get("l_ra_p50_ns"),
                  metrics.get("l_ra_p95_ns"), metrics.get("l_ra_p99_ns"),
                  metrics.get("l_ra_min_ns"), metrics.get("l_ra_max_ns"),
                  metrics.get("c_input_bytes"), metrics.get("c_output_bytes"),
                  json.dumps({"compress": comp_cfg, "ra_latency": ra_cfg}),
-                 notes, _dt.datetime.now(_dt.timezone.utc).isoformat()))
+                 notes, _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                 # resident size of a load-time access structure, where the
+                 # baseline needs one (Re-Pair); NULL otherwise
+                 metrics.get("ra_index_bytes")))
             conn.commit()
             print(f"ra_headline: {cell_id} -> {status} "
                   f"p50={metrics.get('l_ra_p50_ns')}", flush=True)
@@ -205,9 +216,19 @@ def main() -> int:
                     default=REPO_ROOT / "build" / "ra_headline_results.sqlite")
     ap.add_argument("--only", default=None,
                     help="run a single baseline (e.g. repair)")
+    ap.add_argument("--skip", action="append", default=[],
+                    choices=sorted(RUNNER_REL),
+                    help="leave a baseline out (repeatable)")
     ap.add_argument("--cheap-first", action="store_true")
+    ap.add_argument("--baseline", action="append", default=[],
+                    choices=sorted(RUNNER_REL),
+                    help="measure only this baseline (repeatable; default: all)")
+    ap.add_argument("--column", action="append", default=[],
+                    choices=[f"{ds}/{fn.removesuffix('.col')}" for ds, fn in HEADLINE_COLUMNS],
+                    help="measure only this dataset/column (repeatable; default: all)")
     a = ap.parse_args()
-    return drive(a.build_root, a.columns_dir, a.db, a.only, a.cheap_first)
+    return drive(a.build_root, a.columns_dir, a.db, a.only, a.cheap_first,
+                 frozenset(a.skip), frozenset(a.baseline), frozenset(a.column))
 
 
 if __name__ == "__main__":

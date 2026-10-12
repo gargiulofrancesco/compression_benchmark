@@ -1,10 +1,11 @@
-"""— render every paper figure/table from whichever stores are present.
+"""Render diagnostic figures/tables from whichever stores are present.
 
 `make figures` entry point. Resolves the headline store + each a*_results.sqlite
 under --build-root and dispatches to the headline + ablation renderers. Missing
-stores (or all-refused-env L_ra stores on a non-x86 box) are skipped with a
+stores (or all-refused-env L_ra stores on a non-x86 machine) are skipped with a
 printed note — safe to run after any partial set of `make bench` / `make a1..a7`
-runs. Prints the list of artifacts written into --out.
+runs. Prints the list of artifacts written into --out. The figures and tables
+of the paper itself come from tools/paper_figures.py and tools/paper_tables.py.
 """
 from __future__ import annotations
 import argparse
@@ -21,7 +22,7 @@ def render_all(build_root: Path, out_dir: Path) -> list[Path]:
          ("a1", "a2", "a3", "a4", "a5", "a6", "a7")}
 
     written: list[Path] = []
-    written += headline.render_all(results, out_dir)            # F1, T1, T2
+    written += headline.render_all(results, out_dir)            # F1_pareto, T1_ratio, T2_*
     written += ablations.render_f4(a["a1"], a["a3"], a["a7"], out_dir)
     written += ablations.render_a2(a["a2"], out_dir)
     written += ablations.render_a4(a["a4"], out_dir)

@@ -1,11 +1,11 @@
-// OnPair seed determinism gate:
-//   (a) seed=42 × 2 → identical wire (locked-headline path).
+// OnPair seed determinism test:
+//   (a) seed=42 × 2 → identical wire (the seed every experiment config uses).
 //   (b) Round-trip correctness is seed-independent: decoded bytes
 //       at seed=42 == original bytes regardless of seed.
 //
 // NB: parse_onpair_config does NOT enforce seed=42 (unlike RLZ); it accepts
-// any uint64_t. Headline-discipline is enforced at experiment-config / smoke
-// time (config_json templates pin seed=42). Lower-level seeds are still
+// any uint64_t. The experiment configs pin seed=42 (only the A7 sweep
+// varies it). Other seeds are still
 // useful for differential tests.
 
 #include "onpair_runner.h"

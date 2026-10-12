@@ -1,4 +1,4 @@
-// RLZ load/save identity (RNG-seed determinism gate).
+// RLZ load/save identity (RNG-seed determinism).
 // At R%=5% + seed=42, two consecutive compress invocations must produce
 // bytewise-identical wire output.
 

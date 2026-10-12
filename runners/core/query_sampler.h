@@ -1,11 +1,11 @@
 #pragma once
-// step 7 (A6) — in-process query-index generation for the `ra_latency`
-// op. Plan §12.7 row A6: query distribution ∈ {uniform, Zipf(1.0), Zipf(1.5),
-// Beta(2,5), Poisson(N/2)}, x = dist, y = L_ra p50/p95/p99, RQ4 / V-I, V-J.
+// In-process query-index generation for the `ra_latency`
+// op. A6 sweeps the query distribution over {uniform, Zipf(1.0), Zipf(1.5),
+// Beta(2,5), Poisson(N/2)} and reports L_ra p50/p95/p99 for each.
 //
 // This is the single, baseline-agnostic, unit-tested generator shared by the
-// `ra_latency` op of every format (zstd, lz4 — block-based; fsst, onpair —
-// per-string). Sharing it guarantees that the access SEQUENCE handed to each
+// `ra_latency` op of every format (block-based and per-string alike).
+// Sharing it guarantees that the access SEQUENCE handed to each
 // format is byte-for-byte identical given the same (spec, n_samples, num_rows,
 // seed): the only thing that differs between baselines is the decode work being
 // timed, never the queries. The index vector is built ONCE, before the timed
@@ -14,9 +14,9 @@
 //
 // LAYOUT BRACKET. For the skewed distributions a
 // draw produces a *position* in popularity space; how that position maps to a
-// physical string index is a separate, layout-defining choice that materially
-// changes the block baselines' cache behaviour (OnPair/FSST are per-string and
-// largely insensitive). A6 reports BOTH ends of the bracket:
+// physical string index is a separate, layout-defining choice: it decides
+// whether the hot rows, and for a block baseline the hot blocks, are adjacent
+// in memory. A6 reports BOTH ends of the bracket:
 //   - identity : index = position. The hot set is physically CONTIGUOUS (front
 //     for Zipf/Beta, middle for Poisson) — the block baselines' best case
 //     (one hot block stays cached).

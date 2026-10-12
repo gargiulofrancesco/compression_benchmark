@@ -1,6 +1,6 @@
--- Phase 3 result schema. Long format: one row per (cell, baseline, op, metric, sample).
+-- Result schema. Long format: one row per (cell, baseline, op, metric, sample).
 -- Long format absorbs per-baseline sub-counters (FSST natural split, OnPair dict_offsets_bytes)
--- without DDL changes. Per Phase 1 architecture lock + OPEN-Q12.
+-- without DDL changes.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;

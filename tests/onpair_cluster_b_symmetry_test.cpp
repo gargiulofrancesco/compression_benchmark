@@ -1,14 +1,11 @@
-// OnPair BPE/OnPair size-matched pairing gate (+ binding).
+// BPE/OnPair size-matched pairing test.
 // bpe V=16384 ↔ OnPair bits=14 (= 2^14 = 16384).
-// Drives both runners on the same column; reads compress timing from each
-// runner's notes (the OpResult does not carry t_op_ns directly — we time
-// here using steady_clock as a proxy). Hard-assert within ±25% at
-// hardware-strict + rigs; soft-warn within ±50% on M1 dev hardware
-// (Apple Silicon variance + non-Icelake non-AVX-512 — neither runner's
-// timing reflects publish-profile flags).
+// Drives both runners on the same column and times each compress call here
+// with steady_clock (the OpResult does not carry t_op_ns directly).
 //
-// At dev: prints diagnostic ratio; PASSES so long as both runners produce
-// status='ok'. / 8 dry runs flip the strict bound.
+// Prints the onpair/bpe time ratio as a diagnostic; PASSES so long as both
+// runners produce status='ok'. No bound on the ratio is asserted: it varies
+// too much with the CPU and compile flags.
 
 #include "onpair_runner.h"
 #include "../runners/bpe/bpe_runner.h"
@@ -71,13 +68,10 @@ int main() {
     std::cout << "[cluster_b] onpair bits=14 compress=" << onp_ms << " ms\n";
     std::cout << "[cluster_b] ratio onpair/bpe=" << ratio << "\n";
 
-    // + hardware-strict bound: |log(ratio)| ≤ log(1.25) ≈ 0.223.
-    // M1 dev rig: soft-warn within ±50% (|log(ratio)| ≤ log(1.5) ≈ 0.405).
-    // We only WARN at dev; the ctest passes as long as both runners
-    // produced status='ok'.
+    // The ratio is printed, not asserted: the ctest passes as long as both
+    // runners produced status='ok'.
     fs::remove_all(tmp);
-    std::cout << "onpair_cluster_b_symmetry: STATUS-OK both runners (M1 dev "
-              << "soft-warn bound; ±25% hardware-strict bound checked at "
-              << "/8 reference rig; see docs/benchmark/fairness/).\n";
+    std::cout << "onpair_cluster_b_symmetry: STATUS-OK both runners (the "
+              << "ratio above is informative; no bound is checked).\n";
     return 0;
 }

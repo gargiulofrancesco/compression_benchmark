@@ -1,11 +1,11 @@
-"""step 1 — parametric V-D synthetic generator contract.
+"""Parametric synthetic generator contract.
 
 Covers:
   - Determinism: identical (L, σ, ρ, n_rows, seed) → identical column bytes.
   - Edge cases: n_rows=0, ρ=0 (IID uniform), ρ=1 (max repetition), σ=1.
   - Statistical sanity (smoke-grade): ρ=0 marginal byte distribution ≈ uniform;
     ρ=0.95 marginal entropy substantially below uniform.
-  - Committed-bytes oracle: the three V-D fixtures under testdata/datasets/
+  - Committed-bytes oracle: the three synthetic fixtures under testdata/datasets/
     are bit-identical to a fresh `generate_vd(...)` call at the same params.
 """
 from __future__ import annotations
@@ -125,7 +125,7 @@ def test_invalid_params() -> None:
 
 
 def test_committed_fixture_L8_sigma4_rho0_0() -> None:
-    """The committed V-D fixture matches a fresh generate_vd call exactly.
+    """The committed synthetic fixture matches a fresh generate_vd call exactly.
     Sanity check: regression oracle for the parametric generator."""
     fixture = FIXTURE_DIR / "synthetic_vd__L8_sigma4_rho0.0_seed42_n1000.fixture.col"
     if not fixture.exists():
@@ -154,3 +154,24 @@ def test_committed_fixture_L128_sigma256_rho0_95() -> None:
     on_disk = read_column(str(fixture))
     assert fresh.bytes_ == on_disk.bytes_
     assert fresh.offsets == on_disk.offsets
+
+
+def test_column_file_is_written_whole_and_kept(tmp_path: Path) -> None:
+    """The column generator of the synthetic and scale stages: a column is
+    renamed into place once complete, and an existing one is not regenerated."""
+    import struct
+    from tools import gen_vd_columns as G
+
+    class Serial:                       # stands in for the process pool
+        def map(self, f, jobs):
+            return [f(j) for j in jobs]
+
+    path = tmp_path / "c.col"
+    G.write_column_sharded(path, 8, 0.5, 100, Serial())
+    assert [p.name for p in tmp_path.iterdir()] == ["c.col"]
+    blob = path.read_bytes()
+    n, total = struct.unpack("<II", blob[:8])
+    assert n == 100 and len(blob) == 8 + 4 * (n + 1) + total
+    path.write_bytes(b"kept")
+    G.write_column_sharded(path, 8, 0.5, 100, Serial())
+    assert path.read_bytes() == b"kept"

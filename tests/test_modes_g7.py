@@ -54,8 +54,7 @@ def test_g7_pass_fsst():
 
 
 def test_g7_pass_repair():
-    # Re-Pair family is now represented by plain full-column `repair` (the dict
-    # baselines libcsd_rpdac/pfc/rpfc were removed).
+    # The Re-Pair family is represented by plain full-column `repair`.
     check_g7("repair", "DecompressThenScan",
              {"uncompressed": "Uncompressed",
               "zstd": "DecompressThenScan",
@@ -86,7 +85,7 @@ def test_g7_pass_rlz():
 
 
 def test_g7_pass_onpair():
-    # OnPair is the ONLY NativeOnCompressed claimant (FLIPPED).
+    # OnPair is the ONLY NativeOnCompressed claimant.
     check_g7("onpair", "NativeOnCompressed",
              {"uncompressed": "Uncompressed",
               "zstd": "DecompressThenScan",
@@ -105,8 +104,8 @@ def test_load_baseline_modes_phase4_through_onpair():
     assert t == {
         "uncompressed": "Uncompressed",
         "zstd": "DecompressThenScan",
-        "zstd_l1": "DecompressThenScan",   # zstd level twin (ICDE T1/F1 sweep)
-        "zstd_l9": "DecompressThenScan",   # zstd level twin (ICDE T1/F1 sweep)
+        "zstd_l1": "DecompressThenScan",   # zstd level twin (Table II row)
+        "zstd_l9": "DecompressThenScan",   # zstd level twin (Table II row)
         "lz4": "DecompressThenScan",
         "fsst": "DecompressThenScan",
         "fsst_scalar": "DecompressThenScan", # forced-scalar twin (no-AVX-512 FSST point)
@@ -121,9 +120,10 @@ def test_load_baseline_modes_phase4_through_onpair():
 def test_random_access_model_truth_table():
     """The per-baseline random-access model (per_string | block | full_column)
     must match the runners' actual random_decode implementations — it is the
-    determinant of L_ra fairness (§8.4) and the basis of the A5/A6 block-vs-flat
-    split. block: zstd/lz4 decode the enclosing block; full_column: repair has no
-    RA index (decode_all then slice); everything else is per-string."""
+    determinant of L_ra fairness (Section VIII-B4) and the basis of the A5/A6 block-vs-flat
+    split. block: zstd/lz4 decode the enclosing block; everything else is
+    per-string (repair through its grammar-descent index); no baseline is
+    full_column."""
     from pathlib import Path
     p = Path(__file__).resolve().parent.parent / "experiments" / "baseline_modes.yaml"
     ra = random_access_models(p)

@@ -1,6 +1,6 @@
-"""step 7 — A6 driver smoke gate.
+"""A6 driver smoke test.
 
-Invokes `python -m experiments.a6_driver --smoke` against the committed V-D
+Invokes `python -m experiments.a6_driver --smoke` against the committed synthetic
 fixture; asserts a6_results.sqlite contains the six expected rows — zstd (block),
 fsst + onpair (per-string), each under Zipf(1.0) × {identity, scramble} — with
 valid L_ra percentiles (p50 ≤ p95 ≤ p99, tail positive). Verifies the block
@@ -32,24 +32,8 @@ ONPAIR = BUILD / "runners" / "onpair" / "onpair_runner"
 _X86 = platform.machine() in ("x86_64", "AMD64", "amd64")
 
 
-def _controlled_env() -> bool:
-    # Timing drivers refuse unless the environment is controlled: 'performance'
-    # governor on all CPUs AND turbo off (see orchestrator/env_probe.py). An
-    # uncontrolled box returns status=refused-env, not a result.
-    import sys
-    sys.path.insert(0, str(REPO_ROOT))
-    try:
-        from orchestrator.env_probe import env_control
-        return env_control()[0]
-    except Exception:
-        return False
-
-
 @pytest.mark.skipif(not _X86,
                     reason="L_ra rdtscp measurement path is x86_64-only (refused on this arch)")
-@pytest.mark.skipif(not _controlled_env(),
-                    reason="requires a controlled environment: performance governor on all CPUs "
-                           "and turbo off (see README 'Environment control')")
 @pytest.mark.skipif(not (ZSTD.exists() and FSST.exists() and ONPAIR.exists()),
                     reason=f"runner binaries missing: {ZSTD} / {FSST} / {ONPAIR}")
 def test_a6_smoke_end_to_end(tmp_path: Path) -> None:
@@ -89,7 +73,7 @@ def test_a6_smoke_end_to_end(tmp_path: Path) -> None:
         assert qdist == "zipf1.0"
         assert qlayout in ("identity", "scramble")
         assert n_samples == 2000
-        assert in_rows == 1000          # V-D fixture is 1000 rows, used whole.
+        assert in_rows == 1000          # The fixture is 1000 rows, used whole.
         assert comp_bytes > 0
         # rdtscp per-access timing subtracts calibrated pair overhead, so the
         # fastest samples may floor at 0 (min >= 0); but NO baseline may report a

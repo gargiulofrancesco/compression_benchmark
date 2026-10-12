@@ -1,8 +1,8 @@
-"""Minimal V-D synthetic generator for smoke.
+"""Minimal synthetic generator for smoke.
 
 Produces a Column with `n_rows` strings of approximately `mean_len` bytes,
-salted with prefixes from the G6 needle list so prefix_search returns
-non-zero hits. Deterministic given `seed`.
+salted with prefixes from the needle list (testdata/g6_needles.txt) so
+prefix_search returns non-zero hits. Deterministic given `seed`.
 """
 from __future__ import annotations
 import argparse
@@ -20,7 +20,7 @@ def generate(n_rows: int, mean_len: int, seed: int, g6_needles: list[bytes]) -> 
     offsets: list[int] = [0]
     cur = 0
     for i in range(n_rows):
-        # ~30% of rows are prefixed by one of the G6 needles, round-robin —
+        # ~30% of rows are prefixed by one of the needles, round-robin —
         # guarantees every needle gets at least a few hits for self-consistency.
         if rng.random() < 0.30 and g6_needles:
             prefix = g6_needles[i % len(g6_needles)]

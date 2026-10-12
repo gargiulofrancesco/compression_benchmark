@@ -49,15 +49,15 @@ int main(int argc, char *argv[]) {
   if (rest_args.empty())
     rest_args.push_back("");  // empty means that reading from stdin.
 
-  CHECK(!absl::GetFlag(FLAGS_model).empty());
+  QCHECK(!absl::GetFlag(FLAGS_model).empty());
 
   sentencepiece::SentencePieceProcessor sp;
-  CHECK_OK(sp.Load(absl::GetFlag(FLAGS_model)));
-  CHECK_OK(sp.SetDecodeExtraOptions(absl::GetFlag(FLAGS_extra_options)));
+  QCHECK_OK(sp.Load(absl::GetFlag(FLAGS_model)));
+  QCHECK_OK(sp.SetDecodeExtraOptions(absl::GetFlag(FLAGS_extra_options)));
 
   auto output =
       sentencepiece::filesystem::NewWritableFile(absl::GetFlag(FLAGS_output));
-  CHECK_OK(output->status());
+  QCHECK_OK(output->status());
 
   std::string detok, line;
   sentencepiece::SentencePieceText spt;
@@ -75,12 +75,12 @@ int main(int argc, char *argv[]) {
   if (absl::GetFlag(FLAGS_input_format) == "piece") {
     if (absl::GetFlag(FLAGS_output_format) == "string") {
       process = [&](const std::vector<std::string> &pieces) {
-        CHECK_OK(sp.Decode(pieces, &detok));
+        QCHECK_OK(sp.Decode(pieces, &detok));
         output->WriteLine(detok);
       };
     } else if (absl::GetFlag(FLAGS_output_format) == "proto") {
       process = [&](const std::vector<std::string> &pieces) {
-        CHECK_OK(sp.Decode(pieces, &spt));
+        QCHECK_OK(sp.Decode(pieces, &spt));
       };
     } else {
       LOG(FATAL) << "Unknown output format: "
@@ -89,12 +89,12 @@ int main(int argc, char *argv[]) {
   } else if (absl::GetFlag(FLAGS_input_format) == "id") {
     if (absl::GetFlag(FLAGS_output_format) == "string") {
       process = [&](const std::vector<std::string> &pieces) {
-        CHECK_OK(sp.Decode(ToIds(pieces), &detok));
+        QCHECK_OK(sp.Decode(ToIds(pieces), &detok));
         output->WriteLine(detok);
       };
     } else if (absl::GetFlag(FLAGS_output_format) == "proto") {
       process = [&](const std::vector<std::string> &pieces) {
-        CHECK_OK(sp.Decode(ToIds(pieces), &spt));
+        QCHECK_OK(sp.Decode(ToIds(pieces), &spt));
       };
     } else {
       LOG(FATAL) << "Unknown output format: "
@@ -106,7 +106,7 @@ int main(int argc, char *argv[]) {
 
   for (const auto &filename : rest_args) {
     auto input = sentencepiece::filesystem::NewReadableFile(filename);
-    CHECK_OK(input->status());
+    QCHECK_OK(input->status());
     while (input->ReadLine(&line)) {
       const auto pieces = absl::StrSplit(line, " ");
       process(pieces);

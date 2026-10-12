@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <new>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -38,8 +39,7 @@ namespace onpair_bench {
 
 namespace {
 
-// JSON helpers (mirror rlz_runner.cpp;
-// intentional duplication per established lineup pattern).
+// JSON helpers (mirror rlz_runner.cpp; each runner keeps its own copy).
 
 uint64_t extract_u64(const std::string& cfg, const std::string& key, uint64_t def) {
     std::string needle = "\"" + key + "\"";
@@ -124,7 +124,7 @@ uint64_t file_size_bytes(const std::string& path) {
 OnPairConfig validate(OnPairConfig c) {
     if (c.bits < 9 || c.bits > 16)
         throw std::runtime_error(
-            "onpair: bits out of range [9, 16] per got "
+            "onpair: bits out of range [9, 16]; got "
             + std::to_string(c.bits));
     if (!(c.sample_fraction > 0.0 && c.sample_fraction <= 1.0))
         throw std::runtime_error(
@@ -145,6 +145,11 @@ OnPairConfig validate(OnPairConfig c) {
         throw std::runtime_error(
             "onpair: threshold_value out of range [2, 255]; got "
             + std::to_string(c.threshold_value));
+    if (c.dictionary_order != "lexicographic"
+     && c.dictionary_order != "construction")
+        throw std::runtime_error(
+            "onpair: dictionary_order must be 'lexicographic' or "
+            "'construction'; got '" + c.dictionary_order + "'");
     return c;
 }
 
@@ -159,13 +164,12 @@ OnPairConfig parse_onpair_config(const std::string& cfg_json) {
     c.mem_cap_gb      =                       extract_u64(cfg_json, "mem_cap_gb",      c.mem_cap_gb);
     c.threshold_strategy =                    extract_string(cfg_json, "threshold_strategy", c.threshold_strategy);
     c.threshold_value =   static_cast<uint32_t>(extract_u64(cfg_json, "threshold_value", c.threshold_value));
+    c.dictionary_order =                       extract_string(cfg_json, "dictionary_order", c.dictionary_order);
     return validate(c);
 }
 
-// Version string. SHA pin must stay in lockstep with external/onpair_cpp.cmake
-// (ONPAIR_CPP_GIT_TAG) in external/onpair_cpp.cmake. CMake-generated header is a
-// candidate cleanup; for now manual sync is acceptable (single-source
-// review at every SHA bump).
+// Version string. SHA pin must stay in lockstep with ONPAIR_CPP_GIT_TAG in
+// external/onpair_cpp.cmake; the two are synced by hand at every SHA bump.
 #define ONPAIR_BENCH_ONPAIR_SHA_SHORT "f8ecc64f"
 
 const char* OnPairRunner::version() const {
@@ -213,26 +217,39 @@ OpResult OnPairRunner::compress(const std::string& in_path,
             tc.threshold = onpair::encoding::DynamicThreshold{cfg.sample_fraction};
         }
         tc.seed      = cfg.seed;
+        tc.sort_lexicographically = (cfg.dictionary_order == "lexicographic");
 
-        // t_train_ns (ICDE): standalone train timing for the §8
-        // dictionary-construction-cost claim (vs BPE's t_train_ns at the same
+        // t_train_ns: standalone train timing for the training-cost
+        // comparison of Section VIII-B2 (vs BPE's t_train_ns at the same
         // sample budget). Runs BEFORE — in addition to — the one-shot
-        // compress, so t_compress_ns keeps its exact historical semantics;
-        // costs one extra training pass per sample (sub-second to seconds).
-        const auto t_tr0 = std::chrono::steady_clock::now();
+        // compress, so t_compress_ns still times the one-shot call alone;
+        // costs one extra phase-probe pipeline per sample (sub-second to seconds).
+        uint64_t t_train_ns = 0;
+        uint64_t t_parse_pack_ns = 0;
         {
+            const auto t_tr0 = std::chrono::steady_clock::now();
             auto tr_probe = onpair::encoding::train(
                 col_in.bytes.data(), col_in.offsets.data(), N, tc);
-            (void)tr_probe;
-        }
-        const uint64_t t_train_ns = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now() - t_tr0).count());
+            const auto t_tr1 = std::chrono::steady_clock::now();
+            t_train_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    t_tr1 - t_tr0).count());
 
-        // seventh consecutive inheritance: training (pair-merge over
+            onpair::Store phase_store{};
+            phase_store.bit_width = static_cast<onpair::BitWidth>(cfg.bits);
+            onpair::encoding::parse(
+                col_in.bytes.data(), col_in.offsets.data(), N, tr_probe.lpm,
+                phase_store.bit_width, phase_store);
+            const auto t_parse1 = std::chrono::steady_clock::now();
+            t_parse_pack_ns = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    t_parse1 - t_tr1).count());
+        } // release phase-probe dictionary/store before the one-shot
+        const uint64_t t_codec_first_use_ns = t_train_ns + t_parse_pack_ns;
+
+        // As for every baseline, training (pair-merge over
         // input + dictionary construction + bit-packed token-stream emission)
-        // inside compress timed region. the BPE/OnPair size-matched pairing binding load-bearing
-        // at bits=14.
+        // is inside the compress timed region.
         // TIMED: OnPair train + dictionary build + bit-packed token emission
         // (the codec). Input column already read; wire write below excluded so
         // T_c reflects the algorithm, not the disk.
@@ -242,8 +259,9 @@ OpResult OnPairRunner::compress(const std::string& in_path,
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now() - t_comp0).count());
 
-        // Wire materialisation via library serialiser (NON-inherits
-        // row order preserved natively via boundaries[N+1]).
+        // Wire materialisation via library serialiser (row order
+        // preserved natively via boundaries[N+1]).
+        const auto t_ser0 = std::chrono::steady_clock::now();
         {
             std::ofstream f(out_path, std::ios::binary);
             if (!f) throw std::runtime_error("onpair: cannot open out_path");
@@ -251,6 +269,12 @@ OpResult OnPairRunner::compress(const std::string& in_path,
             f.flush();
             if (!f) throw std::runtime_error("onpair: write_to failed");
         }
+        const uint64_t t_serialize_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - t_ser0).count());
+        // Conservative externally observed runner first use: the
+        // one-shot includes its input materialisation in addition to train/parse.
+        const uint64_t t_first_use_ns = t_compress_ns + t_serialize_ns;
 
         const auto view       = col.view();
         const auto dict       = view.dictionary();
@@ -261,7 +285,7 @@ OpResult OnPairRunner::compress(const std::string& in_path,
 
         // Space sub-counter mapping. The DICTIONARY (the trained model) splits
         // into its token content and its own offset array — both reported
-        // separately (onpair_cpp now exposes them; their sum == dict.bytes_used()):
+        // separately (via the local shim accessors; their sum == dict.bytes_used()):
         //   dict_content_bytes — concatenated token byte sequences (model content)
         //   dict_offset_bytes  — the dictionary's own offset array (indexes the
         //                        content; part of the model, NOT string offsets)
@@ -275,8 +299,8 @@ OpResult OnPairRunner::compress(const std::string& in_path,
             (static_cast<uint64_t>(total_tokens) * bits_b + 63ull) / 64ull * 8ull;
         // boundaries_bytes = the per-row STRING offset array (+ wire scalars).
         // These are the per-row string boundaries, distinct from the dictionary's
-        // own offsets above. EXCLUDED from the payload-only compression ratio
-        //: this benchmark compresses string payload, not
+        // own offsets above. EXCLUDED from the payload-only compression ratio:
+        // this benchmark compresses string payload, not
         // string offsets. Derived structurally from the library wire:
         //   8 MAGIC + 1 bit_width + 4 true_bytes_scalar + 4 dict_offsets_size
         //   + 4 real_words + 4 boundaries_size + (N+1)*4  =  25 + (N+1)*4.
@@ -293,21 +317,24 @@ OpResult OnPairRunner::compress(const std::string& in_path,
             {"input_bytes",        static_cast<double>(input_bytes)},
             {"output_bytes",       static_cast<double>(output_bytes)},
             {"num_rows",           static_cast<double>(N)},
-            // Separated dictionary sub-counters (sum == dict_bytes) so the user
+            // Separated dictionary sub-counters (sum == dict_bytes) so a consumer
             // can choose what to include. dict_offset_bytes are DICTIONARY
             // offsets (kept in the model); the string per-row offsets live in
             // boundaries_bytes and are excluded from the payload-only ratio.
             {"dict_content_bytes", static_cast<double>(dict_content_bytes)},
             {"dict_offset_bytes",  static_cast<double>(dict_offset_bytes)},
             {"num_dict_entries",   static_cast<double>(num_tokens)},
-            // Legacy alias for the dictionary offset array (diagnostic
-            // diagnostic): identical to dict_offset_bytes. Kept so existing
+            // Legacy alias for the dictionary offset array (diagnostic):
+            // identical to dict_offset_bytes. Kept so existing
             // consumers/tests that read 'dict_offsets_bytes' stay valid.
             {"dict_offsets_bytes", static_cast<double>(dict_offset_bytes)},
             {"t_compress_ns",      static_cast<double>(t_compress_ns)},
             // Standalone training time (see probe above); parse/encode time
-            // is t_compress_ns minus (a fresh run of) training.
             {"t_train_ns",         static_cast<double>(t_train_ns)},
+            {"t_parse_pack_ns",    static_cast<double>(t_parse_pack_ns)},
+            {"t_serialize_ns",     static_cast<double>(t_serialize_ns)},
+            {"t_codec_first_use_ns", static_cast<double>(t_codec_first_use_ns)},
+            {"t_first_use_ns",     static_cast<double>(t_first_use_ns)},
         };
         return r;
     } catch (const std::bad_alloc&) {
@@ -328,12 +355,83 @@ onpair::OnPairColumn load_wire(const std::string& in_path) {
     if (!f) throw std::runtime_error("onpair: cannot open in_path " + in_path);
     return onpair::OnPairColumn::read_from(f);
 }
+uint32_t packed_token_at(onpair::StoreView store, size_t index) {
+    const uint32_t bits = static_cast<uint32_t>(store.bits());
+    const uint64_t bitpos = static_cast<uint64_t>(index) * bits;
+    const size_t word_index = static_cast<size_t>(bitpos >> 6);
+    const uint32_t shift = static_cast<uint32_t>(bitpos & 63);
+    uint64_t value = store.packed_data()[word_index] >> shift;
+    if (shift + bits > 64)
+        value |= store.packed_data()[word_index + 1] << (64 - shift);
+    return static_cast<uint32_t>(value & ((uint64_t{1} << bits) - 1));
+}
+
+void build_frequency_ordered_view(
+    onpair::OnPairColumnView source,
+    onpair::Dictionary& dst_dict,
+    onpair::Store& dst_store) {
+    const auto src_dict = source.dictionary();
+    const auto src_store = source.store();
+    const uint32_t V = static_cast<uint32_t>(src_dict.num_tokens());
+    const size_t T = src_store.num_tokens();
+
+    std::vector<uint64_t> frequency(V, 0);
+    for (size_t j = 0; j < T; ++j)
+        ++frequency[packed_token_at(src_store, j)];
+
+    std::vector<uint32_t> new_to_old(V);
+    std::iota(new_to_old.begin(), new_to_old.end(), 0u);
+    std::sort(new_to_old.begin(), new_to_old.end(), [&](uint32_t a, uint32_t b) {
+        if (frequency[a] != frequency[b]) return frequency[a] > frequency[b];
+        const size_t al = src_dict.token_size(static_cast<onpair::Token>(a));
+        const size_t bl = src_dict.token_size(static_cast<onpair::Token>(b));
+        const int cmp = std::memcmp(
+            src_dict.data(static_cast<onpair::Token>(a)),
+            src_dict.data(static_cast<onpair::Token>(b)), std::min(al, bl));
+        if (cmp != 0) return cmp < 0;
+        if (al != bl) return al < bl;
+        return a < b;
+    });
+
+    std::vector<onpair::Token> old_to_new(V);
+    dst_dict.offsets.reserve(static_cast<size_t>(V) + 1);
+    dst_dict.offsets.push_back(0);
+    for (uint32_t new_id = 0; new_id < V; ++new_id) {
+        const auto old_id = static_cast<onpair::Token>(new_to_old[new_id]);
+        old_to_new[old_id] = static_cast<onpair::Token>(new_id);
+        const auto span = src_dict.span(old_id);
+        dst_dict.bytes.insert(dst_dict.bytes.end(),
+                              src_dict.raw_bytes() + span.begin,
+                              src_dict.raw_bytes() + span.end);
+        dst_dict.offsets.push_back(static_cast<uint32_t>(dst_dict.bytes.size()));
+    }
+    dst_dict.pad_for_decoder();
+
+    dst_store.bit_width = src_store.bits();
+    dst_store.boundaries.assign(
+        src_store.boundaries(),
+        src_store.boundaries() + src_store.num_strings() + 1);
+    onpair::encoding::BitWriter writer(dst_store);
+    for (size_t j = 0; j < T; ++j) {
+        const uint32_t old_id = packed_token_at(src_store, j);
+        writer.write(old_to_new[old_id]);
+    }
+    writer.flush();
+}
+
 
 } // namespace
 
 OpResult OnPairRunner::bulk_decode(const std::string& in_path,
                                    const std::string& out_path,
-                                   const std::string& /*config_json*/) {
+                                   const std::string& config_json) {
+    const std::string decode_variant =
+        extract_string(config_json, "decode_variant", "native");
+    if (decode_variant != "native" && decode_variant != "frequency") {
+        return OpResult{.status = "crash",
+                        .notes = "onpair: unknown decode_variant "
+                               + decode_variant};
+    }
     // PAYLOAD-ONLY decode timing: the timed region wraps ONLY the
     // payload-only bulk decompress into a PRE-ALLOCATED buffer. This benchmark
     // measures string-PAYLOAD (de)compression and does not (de)compress the
@@ -352,7 +450,18 @@ OpResult OnPairRunner::bulk_decode(const std::string& in_path,
     // UNTIMED pass after the measurement, and assert the payload bytes match.
     try {
         onpair::OnPairColumn col = load_wire(in_path);
-        const auto view = col.view();
+        const auto native_view = col.view();
+        onpair::Dictionary remapped_dict;
+        onpair::Store remapped_store;
+        std::optional<onpair::OnPairColumnView> remapped_view;
+        if (decode_variant == "frequency") {
+            build_frequency_ordered_view(
+                native_view, remapped_dict, remapped_store);
+            remapped_view.emplace(
+                onpair::StoreView(remapped_store),
+                onpair::DictionaryView(remapped_dict));
+        }
+        const auto& view = remapped_view ? *remapped_view : native_view;
         const size_t N  = view.num_strings();
 
         // Worst-case decompressed payload bound: walk dict to find total
@@ -440,11 +549,11 @@ OpResult OnPairRunner::random_decode(const std::string& in_path,
     }
 }
 
-// step 6 (A5). Times n_samples uniform random accesses. OnPair seeks
-// per-string via the global boundaries (§5.4 O(|s_i|)) — there is NO block to
+// Times n_samples random accesses. OnPair seeks
+// per-string via the global boundaries (Section V, O(|s_i|)) — there is NO block to
 // decode — so its L_ra is independent of any block size: this is the flat
-// reference line of figure A5, against which the zstd/lz4 block-decode curves
-// degrade. config_json: n_samples (default 1e6), seed (42), warmup (1 → one
+// reference of the A5 block-size sweep, against which the zstd/lz4 block-decode
+// latencies degrade. config_json: n_samples (default 1e6), seed (42), warmup (1 → one
 // decompress_all pre-pass before timing; 0 → no in-process warmup). The output
 // buffer is sized once (to the widest row) outside the timed loop so the timed
 // region is purely the per-string decompress.
@@ -489,17 +598,16 @@ OpResult OnPairRunner::ra_latency(const std::string& in_path,
 
         // Query indices generated up-front (A6: distribution + layout from cfg)
         // so the distribution math never enters the timed region. OnPair is
-        // per-string (decompress(idx) seeks via the global boundaries), so its
-        // L_ra is largely insensitive to skew/layout — the per-string-class
+        // per-string (decompress(idx) seeks via the global boundaries), so an
+        // access never decodes a neighbouring row — the per-string-class
         // companion to FSST in the A6 roster.
         const QuerySpec qspec = parse_query_spec(cfg_json);
         const std::vector<uint64_t> indices =
             generate_query_indices(qspec, n_samples, N, seed);
 
-        // Batched timing (latency_stats.h measure_ra_latency): the access
-        // returns the LAST decoded byte, so the accumulated, barrier'd value
-        // forces the full per-string decode (anti-DCE) and K is auto-tuned to
-        // the clock so a sub-tick decode is still resolved. Identical primitive
+        // Per-access rdtscp timing (ra_timer_tsc.h ra_measure_shipping): the
+        // access returns the LAST decoded byte, so the accumulated, barrier'd
+        // value forces the full per-string decode (anti-DCE). Identical primitive
         // across every baseline — only the access body differs.
         RaLatencyResult m;
         std::string ra_reason;
@@ -539,24 +647,57 @@ OpResult OnPairRunner::prefix_search(const std::string& in_path,
                                      const std::string& needle,
                                      const std::string& out_path,
                                      const std::string& /*config_json*/) {
-    // + FLIPPED: NativeOnCompressed prefix search.
-    // OnPairColumnView::starts_with delegates to PrefixAutomaton scan over
-    // the bit-packed token stream — never decompresses. G6 self-test verifies
-    // hit-set bit-equality vs Uncompressed.
+    // NativeOnCompressed prefix search.
+    // PrefixAutomaton scan over
+    // the bit-packed token stream — never decompresses. The prefix-search
+    // tests verify hit-set equality vs the uncompressed scan.
     try {
-        onpair::OnPairColumn col = load_wire(in_path);
+        onpair::OnPairColumn col = load_wire(in_path);          // UNTIMED: file read
         const auto view = col.view();
-        std::vector<size_t> hits = view.starts_with(std::string_view{needle});
 
+        // Time query tokenisation/interval construction separately from the
+        // compressed scan. The end-to-end in-memory search metric includes
+        // both. Use the callback API and uint32_t row ids so hit-list
+        // materialisation is byte-for-byte symmetric with scan_prefix().
+        const auto t_search0 = std::chrono::steady_clock::now();
+        onpair::search::PrefixAutomaton automaton(
+            std::string_view{needle}, view.dictionary());
+        const auto t_scan0 = std::chrono::steady_clock::now();
+        const uint64_t t_query_prepare_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                t_scan0 - t_search0).count());
+
+        std::vector<uint32_t> hits;
+        view.scan(automaton, [&](size_t idx) {
+            hits.push_back(static_cast<uint32_t>(idx));
+        });
+        const auto t_search1 = std::chrono::steady_clock::now();
+        const uint64_t t_scan_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                t_search1 - t_scan0).count());
+        const uint64_t t_search_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                t_search1 - t_search0).count());
+
+        // UNTIMED: both searches already paid to append identical uint32_t row
+        // ids; writing those ids to disk is outside the in-memory query cost.
         std::ofstream f(out_path, std::ios::binary);
         if (!f) throw std::runtime_error("onpair: cannot open out_path");
         const uint32_t n_hits = static_cast<uint32_t>(hits.size());
         f.write(reinterpret_cast<const char*>(&n_hits), 4);
-        for (size_t h : hits) {
-            const uint32_t v = static_cast<uint32_t>(h);
-            f.write(reinterpret_cast<const char*>(&v), 4);
+        if (!hits.empty()) {
+            f.write(reinterpret_cast<const char*>(hits.data()),
+                    static_cast<std::streamsize>(hits.size() * sizeof(uint32_t)));
         }
-        return OpResult{.status = "ok"};
+
+        OpResult r;
+        r.metrics.emplace_back("n_hits",             static_cast<double>(n_hits));
+        r.metrics.emplace_back("num_rows",           static_cast<double>(view.num_strings()));
+        r.metrics.emplace_back("needle_bytes",       static_cast<double>(needle.size()));
+        r.metrics.emplace_back("t_query_prepare_ns", static_cast<double>(t_query_prepare_ns));
+        r.metrics.emplace_back("t_scan_ns",          static_cast<double>(t_scan_ns));
+        r.metrics.emplace_back("t_search_ns",        static_cast<double>(t_search_ns));
+        return r;
     } catch (const std::bad_alloc&) {
         return OpResult{.status = "oom", .notes = "onpair: bad_alloc prefix_search"};
     } catch (const std::exception& e) {
@@ -565,7 +706,7 @@ OpResult OnPairRunner::prefix_search(const std::string& in_path,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// step 2 — A1 ablation op (held_out_compress).
+// A1 ablation op (held_out_compress).
 //
 // Protocol:
 //   1. Train Fixed{T} on train.col with seed=42 → observe sample_bytes_consumed.
@@ -584,7 +725,7 @@ OpResult OnPairRunner::prefix_search(const std::string& in_path,
 // (tools/lint/onpair_scope_audit.sh deny-list is unchanged; only KMP /
 // AhoCorasick / EQ / contains / equals are forbidden).
 //
-// Requires upstream patch:
+// Requires the local shim (external/onpair_local_shims.patch):
 //   TrainResult.sample_bytes_consumed (uint64_t).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -613,8 +754,8 @@ OpResult OnPairRunner::held_out_compress(const std::string& train_in_path,
                                          const std::string& /*out_path*/,
                                          const std::string& config_json) {
     OnPairConfig cfg = parse_onpair_config(config_json);
-    // step 2 (A1) drives this op with "fixed_dynamic_paired" (Fixed{T}
-    // first → matched-Dynamic{f}). step 3 (A3 sample_fraction sweep)
+    // A1 drives this op with "fixed_dynamic_paired" (Fixed{T}
+    // first → matched-Dynamic{f}). A3 (sample_fraction sweep)
     // reuses the same op with the single-strategy "dynamic"/"fixed" branch:
     // one trained dictionary, no Fixed/Dynamic pairing, emitting a single
     // metric block + train_ns/encode_ns timing for T_c.
@@ -682,7 +823,7 @@ OpResult OnPairRunner::held_out_compress(const std::string& train_in_path,
                 dict_bytes, tokens_bytes, boundaries_bytes, output_bytes};
         };
 
-        // ── step 3 (A3) — single-strategy branch ────────────────────
+        // ── A3 — single-strategy branch ─────────────────────────────
         // One trained dictionary (DynamicThreshold{sample_fraction} for the A3
         // sample_fraction sweep, or FixedThreshold{T}); encode the heldout
         // column with it; emit a single metric block + train/encode timing for
@@ -742,7 +883,7 @@ OpResult OnPairRunner::held_out_compress(const std::string& train_in_path,
             return r;
         }
 
-        // ──: train Fixed{T} on the train column ─────────────────────
+        // ── train Fixed{T} on the train column ──────────────────────
         onpair::encoding::TrainingConfig tc_fixed;
         tc_fixed.bits      = bits;
         tc_fixed.threshold = onpair::encoding::FixedThreshold{
@@ -767,7 +908,7 @@ OpResult OnPairRunner::held_out_compress(const std::string& train_in_path,
         // throw on the variant.  Real datasets will never hit this edge.
         const double matched_fraction_safe = std::max(matched_fraction, 1.0e-9);
 
-        // ──: train Dynamic{matched_fraction} on the SAME train col ──
+        // ── train Dynamic{matched_fraction} on the SAME train col ───
         onpair::encoding::TrainingConfig tc_dyn;
         tc_dyn.bits      = bits;
         tc_dyn.threshold = onpair::encoding::DynamicThreshold{matched_fraction_safe};
@@ -779,7 +920,7 @@ OpResult OnPairRunner::held_out_compress(const std::string& train_in_path,
             col_train.num_rows(),
             tc_dyn);
 
-        // ──: encode the heldout column with each trained dict ───────
+        // ── encode the heldout column with each trained dict ────────
         onpair::Store store_fixed = encode_into_store(tr_fixed.lpm, bits, col_heldout);
         onpair::Store store_dyn   = encode_into_store(tr_dyn.lpm,   bits, col_heldout);
 

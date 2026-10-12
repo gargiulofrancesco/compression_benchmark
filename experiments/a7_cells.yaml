@@ -1,4 +1,4 @@
-# A7 ablation grid (shuffle-seed sensitivity sweep).
+# A7 ablation grid (shuffle-seed sensitivity sweep; Section VIII-C).
 #
 # Sweep: training shuffle seed ∈ {42, 7, 1729, 0xDEAD, 0xBEEF}
 #        × 2 columns = 10 probes (deliberately narrow: A7 is a
@@ -15,13 +15,11 @@
 # FULL-column experiment (no held-out split); unlike A2 it is compress-only
 # (no bulk_decode — A7's only y-axis is R). See schema/a7_results.sql header.
 #
-# (TPC-DS dropped — phantom/tiny columns; see datasets.yaml.)
-#
 # Smoke: single cell (seed=7, a NON-default, to prove the seed knob is wired)
-# × V-D fixture, used whole (no split). Runs in <1 sec.
+# × synthetic fixture, used whole (no split). Runs in <1 sec.
 #
-# Headline grid (NOT exercised by `make a7-smoke`; requires `make datasets`
-# first; runs via `make a7` on a measurement rig only):
+# Full grid (NOT exercised by `make a7-smoke`; requires `make datasets`
+# first; runs via `make a7`):
 
 seeds: [42, 7, 1729, 57005, 48879]
 bits: 16
@@ -29,12 +27,12 @@ sample_fraction: 0.15
 mem_cap_gb: 64
 
 columns:
-  - { dataset: amazon,       column: titles }   # swapped
+  - { dataset: amazon,       column: titles }
   - { dataset: msmarco_urls, column: url }
 
 smoke:
   # Single-cell A7 smoke: seed=7 (non-default → proves the seed cfg actually
-  # reaches the DynamicThreshold shuffle) against the V-D synthetic fixture
+  # reaches the DynamicThreshold shuffle) against the synthetic fixture
   # (1000 rows @ L=32, σ=16, ρ=0.7), used as the full column (no split — A7 is
   # a full-column experiment). No real-data dependency.
   fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col

@@ -1,10 +1,10 @@
 // FSST-specific: validate the two decoder-construction paths produce
-// bit-identical decoded output per FSST card §"Round-trip self-tests":
+// bit-identical decoded output (docs/benchmark/fairness/fsst.md, "Round-trip self-tests"):
 //   path A: fsst_decoder_t dec = fsst_decoder(encoder)        — direct from live encoder
 //   path B: fsst_export(enc, buf); fsst_import(&dec, buf)     — through serialised header
 //
-// The runner picks path B (no encoder cached across calls). This test closes
-// the "is B equivalent to A?" reviewer question by exhaustive bit-comparison.
+// The runner picks path B (no encoder cached across calls). This test answers
+// "is B equivalent to A?" by exhaustive bit-comparison.
 
 #include "fsst.h"
 #include "runner_protocol.h"

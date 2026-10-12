@@ -1,12 +1,11 @@
-"""Parametric V-D synthetic generator for §8.8 N-sweep (10^5 .. 10^9) and §8.11
-F6 36-cell Pareto sweep.
+"""Parametric synthetic generator for the scale sweep (Section VIII-F,
+10^5 .. 10^8 rows) and the synthetic sweep (Section VIII-G, Fig. 8).
 
-Paper.3 (rev-2): the synthetic V-D generator is a parametric Markov
-over a prefix tree, swept over `L ∈ {8, 32, 128}` × `|Σ| ∈ {4, 16, 256}`
-× `ρ ∈ {0.0, 0.3, 0.7, 0.95}` (36 cells × 10M strings per cell).
+The generator is parametric in mean length `L`, alphabet size `|Σ|` and
+intra-row repetitiveness `ρ`. The paper's columns (tools/gen_vd_columns.py)
+use `L ∈ {8, 32, 128}` × `ρ ∈ {0.0, 0.5, 0.95}` at `|Σ| = 16`.
 
-ρ semantics (see experiments/datasets.yaml
-"Synthetic V-D rho semantics"):
+ρ semantics:
   - With probability `ρ`, the next byte is drawn from the empirical 1-gram
     distribution of the already-emitted bytes in the current row (preferential
     attachment — heavier weight on bytes already used in this row).
@@ -54,7 +53,7 @@ def _alphabet(sigma_size: int) -> bytes:
 
 
 def generate_vd(L: int, sigma_size: int, rho: float, n_rows: int, seed: int) -> Column:
-    """Produce a V-D column. Pure-Python; deterministic given the parameters.
+    """Produce a synthetic column. Pure-Python; deterministic given the parameters.
 
     Memory: per-row counter resets each row, so peak RAM is O(L + |Σ|), and
     the total output column buffer is sized incrementally row-by-row.
@@ -100,7 +99,7 @@ def generate_vd(L: int, sigma_size: int, rho: float, n_rows: int, seed: int) -> 
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Parametric V-D synthetic column generator.")
+    p = argparse.ArgumentParser(description="Parametric synthetic column generator.")
     p.add_argument("--L",      type=int,   required=True, help="Mean Gaussian string length")
     p.add_argument("--sigma",  type=int,   required=True, help="Alphabet size |Σ| (1..256)")
     p.add_argument("--rho",    type=float, required=True, help="Repetition rate (0..1)")

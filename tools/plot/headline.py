@@ -1,4 +1,6 @@
-"""— headline figures/tables (§8.2): F1 Pareto + T1 ratio + T2 throughput.
+"""Diagnostic headline figures/tables: F1 Pareto + T1 ratio + T2 throughput
+(quick views of the main grid; the paper's Fig. 4 and Table II are produced by
+tools/paper_figures.py and tools/paper_tables.py).
 
 Reads the headline store (build/results.sqlite, produced by `make bench`). All
 three honor the lossless guard (orchestrator.modes.assert_lossless_only) before

@@ -1,4 +1,4 @@
-// BPE card load-bearing for: first non-power-of-2 packing.
+// BPE token packing at bit widths that are not a multiple of 8.
 // At each V in {4K, 16K, 64K, 256K} after compress, the wire layout must
 // satisfy:
 //   packed_tokens region size == ceil(T * B / 8) with B = ceil(log2(V))

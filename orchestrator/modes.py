@@ -1,11 +1,11 @@
-"""baseline_modes.yaml loader + G7 gate.
+"""baseline_modes.yaml loader + mode check (check_g7).
 
-G7 asserts the runner's declared prefix_search_mode (from its hello envelope)
-matches the expected value from baseline_modes.yaml. Mismatch is fatal.
+check_g7 asserts the runner's declared prefix_search_mode (from its hello
+envelope) matches the expected value from baseline_modes.yaml. Mismatch is fatal.
 
 is_lossless field: per-baseline boolean flag distinguishing baselines that
 preserve arbitrary input bytes through compress→bulk_decode round-trip (true)
-from ones that don't (false; quarantined from headline T1/T2/F1, appendix-only).
+from ones that don't (false; quarantined from the main table and figure).
 No baseline is currently quarantined — the `bpe` baseline (SentencePiece BPE via
 the GPT-2 byte<->unicode bijection) is bytewise lossless — but the guard
 machinery below is retained as a standing safety check.
@@ -16,7 +16,7 @@ from pathlib import Path
 
 VALID_MODES = {"NativeOnCompressed", "DecompressThenScan", "Uncompressed"}
 
-# random_access_model: how random_decode(i) reaches row i (L_ra fairness, §8.4).
+# random_access_model: how random_decode(i) reaches row i (L_ra fairness, Section VIII-B4).
 #   per_string  — decode only row i (per-row offset/phrase index + resident dict)
 #   block       — decode the enclosing fixed-size block, then slice row i
 #   full_column — no RA index: decode the whole column, slice row i (worst)
@@ -29,13 +29,12 @@ RUNNER_ALIASES: dict[str, str] = {
     # Dictionary-size-matched bpe twin (V=65536); same bpe runner (hello.name "bpe").
     "bpe_v65536":  "bpe",
     # Forced-scalar FSST twin (simd=false → AVX-512 compression off); same fsst
-    # runner (hello.name "fsst"). The "FSST no-AVX" headline point (W3).
+    # runner (hello.name "fsst").
     "fsst_scalar": "fsst",
-    # zstd level twins (ICDE headline zstd-{1,3,9} sweep; VLDB-R2 D2); same zstd
+    # zstd level twins (the paper's zstd-{1,3,9} rows); same zstd
     # runner binary (hello.name "zstd"), only the level config differs.
     "zstd_l1": "zstd",
     "zstd_l9": "zstd",
-    # (libcsd_pfc/rpfc aliases removed — dict baselines dropped.)
 }
 
 
@@ -87,15 +86,15 @@ def load_full(path: Path) -> dict[str, dict]:
 
 def random_access_models(path: Path) -> dict[str, str]:
     """Return {name: random_access_model}. The per-string vs block vs full_column
-    split that determines L_ra fairness (§8.4); the A5/A6 block-vs-flat rosters
+    split that determines L_ra fairness (Section VIII-B4); the A5/A6 block-vs-flat rosters
     derive from it."""
     return {n: info["random_access_model"] for n, info in load_full(path).items()}
 
 
 def lossless_baselines(path: Path) -> set[str]:
     """Return the set of baselines flagged is_lossless: true. Headline-table
-    aggregations (paper T1, T2, figure F1) MUST filter by membership in
-    this set. quarantine ruling."""
+    aggregations (Table II, Fig. 4) MUST filter by membership in
+    this set."""
     return {n for n, info in load_full(path).items() if info["is_lossless"]}
 
 
@@ -114,10 +113,10 @@ def assert_lossless_only(baselines: list[str], lossless: set[str], context: str)
 
 def check_g7(name: str, declared_mode: str, table: dict[str, str]) -> None:
     if name not in table:
-        raise RuntimeError(f"G7: runner '{name}' not present in baseline_modes.yaml")
+        raise RuntimeError(f"mode check: runner '{name}' not present in baseline_modes.yaml")
     expected = table[name]
     if declared_mode != expected:
         raise RuntimeError(
-            f"G7: runner '{name}' declared prefix_search_mode={declared_mode!r} "
+            f"mode check: runner '{name}' declared prefix_search_mode={declared_mode!r} "
             f"but baseline_modes.yaml says {expected!r}"
         )

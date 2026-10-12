@@ -60,6 +60,21 @@ index 72b6538..1b1e962 100644
      // Returns the [lo, hi] token-id range whose byte sequences share `prefix`.
      TokenRange prefix_range(
          const uint8_t* prefix, size_t prefix_len) const noexcept;
+diff --git a/include/onpair/encoding/training/config.h b/include/onpair/encoding/training/config.h
+index c5fa130..c5a38e4 100644
+--- a/include/onpair/encoding/training/config.h
++++ b/include/onpair/encoding/training/config.h
+@@ -39,6 +39,10 @@ struct TrainingConfig {
+     // RNG seed for the training shuffle.  nullopt → non-deterministic.
+     // Set for reproducible compression (same dictionary across runs).
+     std::optional<uint64_t> seed;
++
++    // Diagnostic-only layout control. Production/default behavior remains
++    // lexicographic; false preserves token construction/insertion order.
++    bool sort_lexicographically = true;
+ };
+ 
+ } // namespace onpair::encoding
 diff --git a/include/onpair/encoding/training/trainer.h b/include/onpair/encoding/training/trainer.h
 index c5edcda..c57d3b0 100644
 --- a/include/onpair/encoding/training/trainer.h
@@ -68,12 +83,12 @@ index c5edcda..c57d3b0 100644
  struct TrainResult {
      Dictionary             dict;  /// tokens in lexicographic order
      LongestPrefixMatcher   lpm;   /// maps byte sequences → sorted token IDs
-+    uint64_t sample_bytes_consumed = 0;  /// onpair_bench dev shim (rig, not upstream)
++    uint64_t sample_bytes_consumed = 0;  /// added by the benchmark (not upstream)
  };
  
  /// Train a dictionary from raw input and return it in sorted order.
 diff --git a/src/onpair/encoding/training/trainer.cpp b/src/onpair/encoding/training/trainer.cpp
-index 53e5b3c..6eb6f7e 100644
+index 53e5b3c..f3d886c 100644
 --- a/src/onpair/encoding/training/trainer.cpp
 +++ b/src/onpair/encoding/training/trainer.cpp
 @@ -136,6 +136,7 @@ TrainResult train(const uint8_t* data,
@@ -92,3 +107,14 @@ index 53e5b3c..6eb6f7e 100644
  
              if (dyn) {
                  dyn->on_bytes_scanned(curr_len);
+@@ -195,7 +197,9 @@ TrainResult train(const uint8_t* data,
+     }
+ 
+     // ── Sort lexicographically before returning ───────────────────────────
+-    sort_dictionary(result);
++    // The false branch is used only by the benchmark's dictionary-order
++    // diagnostic; production/default behavior remains sorted.
++    if (cfg.sort_lexicographically) sort_dictionary(result);
+ 
+     result.dict.pad_for_decoder();
+ 

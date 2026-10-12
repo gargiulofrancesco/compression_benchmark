@@ -1,7 +1,7 @@
 """Failure-as-data classifier.
 
 Maps (exit_code, signal, peak_rss_bytes, wall_seconds, mem_cap_bytes,
-timeout_seconds, declared_status) → one of the seven status strings:
+timeout_seconds, declared_status) → one of the eight status strings:
 
     ok | oom | timeout | refused-env | crash | lossy | unsupported | dev-only
 

@@ -1,7 +1,7 @@
-# step 5 — A4 ablation grid (capacity sweep).
+# A4 ablation grid (capacity sweep with timings and training memory).
 #
-# Sweep: capacity ∈ {2⁹, 2¹², 2¹⁴, 2¹⁶} × 6 headline columns = 24 probes
-# (.7 row A4). capacity ≡ 2^bits (OnPair has no independent
+# Sweep: capacity ∈ {2⁹, 2¹², 2¹⁴, 2¹⁶} × 6 headline columns = 24 probes.
+#        capacity ≡ 2^bits (OnPair has no independent
 #        capacity knob; TrainingConfig defines max dict size = 2^bits — see
 #        schema/a4_results.sql header), so the sweep is over `bit_widths`
 #        [9, 12, 14, 16] and capacity = 1<<b is derived. Each cell compresses
@@ -19,13 +19,12 @@
 # schema header for the rationale. Like A2 this is a FULL-column experiment
 # (no held-out split).
 #
-# (Roster: the paper's high-cardinality headline columns;
-#  restricted to the paper's six headline columns.)
+# (Columns: the paper's six headline columns.)
 #
-# Smoke: single cell (capacity=2¹²=4096 × V-D fixture, used whole). <1 sec.
+# Smoke: single cell (capacity=2¹²=4096 × synthetic fixture, used whole). <1 sec.
 #
-# Headline grid (NOT exercised by `make a4-smoke`; requires `make datasets`
-# first; runs via `make a4` on a measurement rig only):
+# Full grid (NOT exercised by `make a4-smoke`; requires `make datasets`
+# first; runs via `make a4`):
 
 bit_widths: [9, 12, 14, 16]   # capacity = 1<<b ∈ {512, 4096, 16384, 65536}
 sample_fraction: 0.15
@@ -41,7 +40,7 @@ columns:
   - { dataset: tpch,            column: c_comment }
 
 smoke:
-  # Single-cell A4 smoke: capacity=2¹²=4096 (bits=12) against the V-D synthetic
+  # Single-cell A4 smoke: capacity=2¹²=4096 (bits=12) against the synthetic
   # fixture (1000 rows @ L=32, σ=16, ρ=0.7), used as the full column (no split —
   # A4 is a full-column experiment). No real-data dependency.
   fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col

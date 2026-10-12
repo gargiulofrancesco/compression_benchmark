@@ -1,9 +1,10 @@
 #pragma once
-// Shared helper for the 8 `DecompressThenScan` baselines (zstd is the first claimant).
+// Shared helper for the `DecompressThenScan` baselines that decode the whole
+// column to search it (zstd, lz4, repair).
 // The runner provides a decode functor; this helper calls it inside the runner's
 // timing region, then runs the canonical `scan_prefix` over the produced column.
-// Decode and scan time are both billed to `prefix_search` per architecture
-// addendum ("Decode is inside the timed region; no decoded-state caching across queries").
+// Decode and scan time are both billed to `prefix_search`: decode is inside
+// the timed region, and no decoded state is cached across queries.
 
 #include "runner_protocol.h"
 

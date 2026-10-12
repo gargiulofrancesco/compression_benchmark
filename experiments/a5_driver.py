@@ -1,19 +1,20 @@
-"""step 6 — A5 ablation driver (block-size sweep vs random-access latency).
+"""A5 ablation driver (block-size sweep vs random-access latency;
+Section VIII-E).
 
 Drives the block-based baselines (zstd, lz4) and OnPair via the standard NDJSON
 protocol. For each (baseline, dataset, column, block_size, cache_state) cell, the
-baseline compresses the FULL column at that block size, then the new `ra_latency`
+baseline compresses the FULL column at that block size, then the `ra_latency`
 op times n_samples uniform-random single-string accesses (no file I/O in the
 timed loop) and reduces them to L_ra p50/p95/p99 (+ mean/min/max). One row is
 written to build/a5_results.sqlite per schema/a5_results.sql.
 
-CROSS-BASELINE REFRAME: OnPair has no block knob —
-decompress(idx) seeks per-string via the global boundaries (§5.4 O(|s_i|)) — so
+CROSS-BASELINE DESIGN: OnPair has no block knob —
+decompress(idx) seeks per-string via the global boundaries (Section V, O(|s_i|)) — so
 block size cannot move its L_ra. A5 sweeps block size on the block-based
 baselines (zstd, lz4), whose L_ra degrades as the block they must decode to
 answer one point query grows, and records OnPair as a single FLAT reference line
-(block_size_strings = NULL). RLZ is excluded (block_size locked to 16384,
-). See schema/a5_results.sql for the full design note.
+(block_size_strings = NULL). RLZ is excluded (block_size fixed at 16384).
+See schema/a5_results.sql for the full design note.
 
 The `ra_latency` op is harness C++ (runners/{zstd,lz4,onpair}, dispatched by
 runners/core/runner_protocol.cpp) — NOT an OnPair library change. compress +
@@ -21,14 +22,16 @@ ra_latency run in ONE runner process per cell (A5 measures latency, not RSS, so
 the separate-process discipline A4 needed for M_train does not apply here).
 
 cache_state ∈ {warm, cold} maps to the op's `warmup` flag (warm → one in-process
-decode pre-pass before timing; cold → none). True FS-cache-cold (drop OS page
-cache) is a measurement-rig concern of the `make a5` wrapper, not the op.
+decode pre-pass before timing; cold → none). A true FS-cache-cold run (drop the
+OS page cache between cells) is up to whoever runs `make a5`; the op does not
+do it.
 
 Modes:
   --smoke   : one zstd block cell (block=256) + one OnPair flat cell against the
-              committed V-D fixture, used whole, n_samples=2000. <1 sec.
+              committed synthetic fixture, used whole, n_samples=2000. <1 sec.
   default   : full grid against datasets/materialized/<dataset>/<col>.col
-              (produced by `make datasets`). Measurement rig only.
+              (produced by `make datasets`). Latencies need x86-64 with an
+              invariant TSC (refused-env otherwise).
 
 A5 owns its own a5_results.sqlite store and never touches the headline
 results.sqlite or a1..a4_results.sqlite.
@@ -294,7 +297,7 @@ def _flags_sha(default: str) -> str:
 
 
 def _run_smoke(build_root: Path, db_path: Path) -> int:
-    """One zstd block cell + one OnPair flat cell against the V-D fixture, warm."""
+    """One zstd block cell + one OnPair flat cell against the synthetic fixture, warm."""
     cells_yaml = REPO_ROOT / "experiments" / "a5_cells.yaml"
     cfg = yaml.safe_load(cells_yaml.read_text())
     smoke = cfg["smoke"]

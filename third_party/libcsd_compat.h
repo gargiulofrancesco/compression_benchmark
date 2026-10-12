@@ -1,8 +1,8 @@
 #pragma once
 // Build-time compatibility shim for the vendored libCSD library at
 // third_party/libcsd/ (SHA 568bf8a8…30b3). This file is OURS, NOT vendored;
-// it lives outside third_party/libcsd/ to preserve vendored-snapshot integrity
-// per Phase 0 OPEN-Q10.
+// it lives outside third_party/libcsd/ so that the vendored snapshot stays
+// untouched.
 //
 // libCSD's 2014 code assumes Linux-isms (ulong, uchar, uint, ushort typedefs
 // that the BSD <sys/types.h> provides as u_long etc.). These names are NOT

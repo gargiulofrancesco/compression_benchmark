@@ -1,11 +1,11 @@
-"""— headline bench-smoke end-to-end gate.
+"""Headline bench-smoke end-to-end test.
 
 Generates the headline smoke cells doc and drives it through the canonical
 orchestrator (the same code path `make bench` uses at scale), then asserts the
 headline results.sqlite holds the expected rows with valid compress sub-counters
 + a sane ratio for each baseline. Skipped if the required runner binaries are
-not built. This is the dev-box proof that the headline wiring works before the
-real `make bench` runs on the rig.
+not built. It shows that the headline wiring works without the datasets that
+the real `make bench` needs.
 """
 from __future__ import annotations
 import os
@@ -50,7 +50,7 @@ def test_bench_smoke_end_to_end(tmp_path: Path) -> None:
          "--db", str(db), "--csv", str(csv),
          "--workdir", str(tmp_path / "wd")],
         cwd=str(REPO_ROOT), env=env, capture_output=True, text=True, timeout=180)
-    # exit 0 ⇒ G6 self-consistency passed for every cell.
+    # exit 0 ⇒ the prefix-search check passed for every cell.
     assert orch.returncode == 0, (
         f"orchestrate failed: stdout={orch.stdout[-2000:]!r} stderr={orch.stderr[-2000:]!r}")
 
@@ -64,7 +64,7 @@ def test_bench_smoke_end_to_end(tmp_path: Path) -> None:
             "SELECT DISTINCT op FROM results WHERE baseline=?", (b,))}
         assert {"compress", "bulk_decode", "random_decode", "prefix_search"} <= ops, (b, ops)
 
-    # G6 passed (recorded as a metric row) for each cell.
+    # The prefix-search check passed (recorded as the g6_passed metric row) for each cell.
     g6 = conn.execute(
         "SELECT baseline, metric_value FROM results WHERE metric_name='g6_passed'").fetchall()
     assert g6 and all(v == 1.0 for _b, v in g6), g6

@@ -1,14 +1,11 @@
 """Reproducible plot template — reads results_agg, writes PDF + PNG.
 
-produces one figure (median compress throughput per baseline) as a
-scaffolding example. baseline integrations will subclass the
-read-aggregate-render shape for F1–F6 / T1–T4.
+Produces one figure (median compress throughput per baseline); `make smoke`
+renders it from the smoke store as an end-to-end check of the plotting path.
 
-Pixel-determinism scaffolding: matplotlib rcParams pinned; PYTHONHASHSEED=0
-expected in env. Byte-identity is checked only on the dedicated golden-fixture
-test (tools/plot/test_figure_template.py) when the golden file is present;
-in production the test is `pytest.skip`-ped pending reproducible-env
-lock-in (.7 deferred-to-Phase-7).
+matplotlib rcParams are pinned and PYTHONHASHSEED=0 is expected in the
+environment. tests/test_figure_template.py checks that a valid PNG comes out
+of the CSV fixture; it does not compare pixels.
 """
 from __future__ import annotations
 import argparse

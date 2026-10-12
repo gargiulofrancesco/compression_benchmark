@@ -1,9 +1,7 @@
-// OnPair bit-width disjointness gate (§8.6 sub-counter tradeoff visual).
-// + OnPair "bit-width disjointness" requirement:
+// OnPair bit-width disjointness test (dictionary/token tradeoff):
 // across bits ∈ {12, 14, 16} on a structured column, dict_bytes should
 // trend UP and tokens_bytes should trend DOWN. On uniform-random text
-// the direction may soften; we accept "≥1 of the two trends visible"
-// at smoke and tighten in on real datasets.
+// the direction may soften; the test accepts "≥1 of the two trends visible".
 
 #include "onpair_runner.h"
 #include "runner_protocol.h"

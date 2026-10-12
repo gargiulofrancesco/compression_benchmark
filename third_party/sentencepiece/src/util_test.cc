@@ -12,52 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.!
 
+#include "util.h"
+
 #include <map>
 
 #include "filesystem.h"
 #include "testharness.h"
+#include "third_party/absl/status/status.h"
 #include "third_party/absl/strings/str_cat.h"
-#include "util.h"
+#include "third_party/absl/strings/string_view.h"
+#include "third_party/absl/time/clock.h"
+#include "third_party/absl/time/time.h"
 
 namespace sentencepiece {
 namespace {
 constexpr int kMaxUnicode = 0x10FFFF;
 }
 
-TEST(UtilTest, LexicalCastTest) {
-  bool b = false;
-  EXPECT_TRUE(string_util::lexical_cast<bool>("true", &b));
-  EXPECT_TRUE(b);
-  EXPECT_TRUE(string_util::lexical_cast<bool>("false", &b));
-  EXPECT_FALSE(b);
-  EXPECT_FALSE(string_util::lexical_cast<bool>("UNK", &b));
-
-  int32 n = 0;
-  EXPECT_TRUE(string_util::lexical_cast<int32>("123", &n));
-  EXPECT_EQ(123, n);
-  EXPECT_TRUE(string_util::lexical_cast<int32>("-123", &n));
-  EXPECT_EQ(-123, n);
-  EXPECT_FALSE(string_util::lexical_cast<int32>("UNK", &n));
-
-  double d = 0.0;
-  EXPECT_TRUE(string_util::lexical_cast<double>("123.4", &d));
-  EXPECT_NEAR(123.4, d, 0.001);
-  EXPECT_FALSE(string_util::lexical_cast<double>("UNK", &d));
-
-  std::string s;
-  EXPECT_TRUE(string_util::lexical_cast<std::string>("123.4", &s));
-  EXPECT_EQ("123.4", s);
-}
-
 TEST(UtilTest, Hex) {
-  for (char32 a = 0; a < 100000; ++a) {
-    const std::string s = string_util::IntToHex<char32>(a);
-    CHECK_EQ(a, string_util::HexToInt<char32>(s));
+  for (char32_t a = 0; a < 100000; ++a) {
+    const std::string s = string_util::IntToHex<char32_t>(a);
+    CHECK_EQ(a, string_util::HexToInt<char32_t>(s));
   }
-
   const int n = 151414;
   CHECK_EQ("24F76", string_util::IntToHex(n));
   CHECK_EQ(n, string_util::HexToInt<int>("24F76"));
+  CHECK_EQ(n, string_util::HexToInt<int>("0x24F76"));
 }
 
 TEST(UtilTest, StringViewTest) {
@@ -82,46 +62,40 @@ TEST(UtilTest, EncodePODTet) {
   }
 
   {
-    int32 v = 0;
-    tmp = string_util::EncodePOD<int32>(10);
-    EXPECT_TRUE(string_util::DecodePOD<int32>(tmp, &v));
+    int32_t v = 0;
+    tmp = string_util::EncodePOD<int32_t>(10);
+    EXPECT_TRUE(string_util::DecodePOD<int32_t>(tmp, &v));
     EXPECT_EQ(10, v);
   }
 
   {
-    int16 v = 0;
-    tmp = string_util::EncodePOD<int16>(10);
-    EXPECT_TRUE(string_util::DecodePOD<int16>(tmp, &v));
+    int16_t v = 0;
+    tmp = string_util::EncodePOD<int16_t>(10);
+    EXPECT_TRUE(string_util::DecodePOD<int16_t>(tmp, &v));
     EXPECT_EQ(10, v);
   }
 
   {
-    int64 v = 0;
-    tmp = string_util::EncodePOD<int64>(10);
-    EXPECT_TRUE(string_util::DecodePOD<int64>(tmp, &v));
+    int64_t v = 0;
+    tmp = string_util::EncodePOD<int64_t>(10);
+    EXPECT_TRUE(string_util::DecodePOD<int64_t>(tmp, &v));
     EXPECT_EQ(10, v);
   }
 
   // Invalid data
   {
-    int32 v = 0;
-    tmp = string_util::EncodePOD<int64>(10);
-    EXPECT_FALSE(string_util::DecodePOD<int32>(tmp, &v));
+    int32_t v = 0;
+    tmp = string_util::EncodePOD<int64_t>(10);
+    EXPECT_FALSE(string_util::DecodePOD<int32_t>(tmp, &v));
   }
 }
 
 TEST(UtilTest, ItoaTest) {
-  auto Itoa = [](int v) {
-    char buf[16];
-    string_util::Itoa(v, buf);
-    return std::string(buf);
-  };
-
-  EXPECT_EQ("0", Itoa(0));
-  EXPECT_EQ("10", Itoa(10));
-  EXPECT_EQ("-10", Itoa(-10));
-  EXPECT_EQ("718", Itoa(718));
-  EXPECT_EQ("-522", Itoa(-522));
+  EXPECT_EQ("0", string_util::SimpleItoa(0));
+  EXPECT_EQ("10", string_util::SimpleItoa(10));
+  EXPECT_EQ("-10", string_util::SimpleItoa(-10));
+  EXPECT_EQ("718", string_util::SimpleItoa(718));
+  EXPECT_EQ("-522", string_util::SimpleItoa(-522));
 }
 
 TEST(UtilTest, OneCharLenTest) {
@@ -188,7 +162,7 @@ TEST(UtilTest, DecodeUTF8Test) {
   }
 
   {
-    const char *kInvalidData[] = {
+    const char* kInvalidData[] = {
         "\xC2",      // must be 2byte.
         "\xE0\xE0",  // must be 3byte.
         "\xFF",      // BOM
@@ -226,11 +200,11 @@ TEST(UtilTest, DecodeUTF8Test) {
 
 TEST(UtilTest, EncodeUTF8Test) {
   char buf[16];
-  for (char32 cp = 1; cp <= kMaxUnicode; ++cp) {
+  for (char32_t cp = 1; cp <= kMaxUnicode; ++cp) {
     if (!string_util::IsValidCodepoint(cp)) continue;
     const size_t mblen = string_util::EncodeUTF8(cp, buf);
     size_t mblen2;
-    const char32 c = string_util::DecodeUTF8(buf, buf + 16, &mblen2);
+    const char32_t c = string_util::DecodeUTF8(buf, buf + 16, &mblen2);
     EXPECT_EQ(mblen2, mblen);
     EXPECT_EQ(cp, c);
   }
@@ -250,7 +224,7 @@ TEST(UtilTest, EncodeUTF8Test) {
 }
 
 TEST(UtilTest, UnicodeCharToUTF8Test) {
-  for (char32 cp = 1; cp <= kMaxUnicode; ++cp) {
+  for (char32_t cp = 1; cp <= kMaxUnicode; ++cp) {
     if (!string_util::IsValidCodepoint(cp)) continue;
     const auto s = string_util::UnicodeCharToUTF8(cp);
     const auto ut = string_util::UTF8ToUnicodeText(s);
@@ -308,19 +282,12 @@ TEST(UtilTest, MapUtilTest) {
 
   EXPECT_EQ("A", port::FindOrDie(kMap, "a"));
   EXPECT_EQ("B", port::FindOrDie(kMap, "b"));
-  EXPECT_DEATH(port::FindOrDie(kMap, "x"), "");
 
   EXPECT_EQ("A", port::FindWithDefault(kMap, "a", "x"));
   EXPECT_EQ("B", port::FindWithDefault(kMap, "b", "x"));
   EXPECT_EQ("x", port::FindWithDefault(kMap, "d", "x"));
 
   EXPECT_EQ("A", port::FindOrDie(kMap, "a"));
-  EXPECT_DEATH(port::FindOrDie(kMap, "d"), "");
-}
-
-TEST(UtilTest, MapUtilVecTest) {
-  const std::map<std::vector<int>, std::string> kMap = {{{0, 1}, "A"}};
-  EXPECT_DEATH(port::FindOrDie(kMap, {0, 2}), "");
 }
 
 TEST(UtilTest, InputOutputBufferTest) {
@@ -332,7 +299,7 @@ TEST(UtilTest, InputOutputBufferTest) {
 
   {
     auto output = filesystem::NewWritableFile(
-        util::JoinPath(absl::GetFlag(FLAGS_test_tmpdir), "test_file"));
+        util::JoinPath(::testing::TempDir(), "test_file"));
     for (size_t i = 0; i < kData.size(); ++i) {
       output->WriteLine(kData[i]);
     }
@@ -340,7 +307,7 @@ TEST(UtilTest, InputOutputBufferTest) {
 
   {
     auto input = filesystem::NewReadableFile(
-        util::JoinPath(absl::GetFlag(FLAGS_test_tmpdir), "test_file"));
+        util::JoinPath(::testing::TempDir(), "test_file"));
     std::string line;
     for (size_t i = 0; i < kData.size(); ++i) {
       EXPECT_TRUE(input->ReadLine(&line));
@@ -355,48 +322,28 @@ TEST(UtilTest, InputOutputBufferInvalidFileTest) {
   EXPECT_FALSE(input->status().ok());
 }
 
-TEST(UtilTest, STLDeleteELementsTest) {
-  class Item {
-   public:
-    explicit Item(int *counter) : counter_(counter) {}
-    ~Item() { ++*counter_; }
-
-   private:
-    int *counter_;
-  };
-
-  std::vector<Item *> data;
-  int counter = 0;
-  for (int i = 0; i < 10; ++i) {
-    data.push_back(new Item(&counter));
-  }
-  port::STLDeleteElements(&data);
-  CHECK_EQ(10, counter);
-  EXPECT_EQ(0, data.size());
-}
-
 TEST(UtilTest, StatusTest) {
-  const util::Status ok;
+  const absl::Status ok;
   EXPECT_TRUE(ok.ok());
-  EXPECT_EQ(util::StatusCode::kOk, ok.code());
+  EXPECT_EQ(absl::StatusCode::kOk, ok.code());
   EXPECT_EQ(std::string(""), ok.message());
 
-  const util::Status s1(util::StatusCode::kUnknown, "unknown");
-  const util::Status s2(util::StatusCode::kUnknown, std::string("unknown"));
+  const absl::Status s1(absl::StatusCode::kUnknown, "unknown");
+  const absl::Status s2(absl::StatusCode::kUnknown, std::string("unknown"));
 
-  EXPECT_EQ(util::StatusCode::kUnknown, s1.code());
-  EXPECT_EQ(util::StatusCode::kUnknown, s2.code());
+  EXPECT_EQ(absl::StatusCode::kUnknown, s1.code());
+  EXPECT_EQ(absl::StatusCode::kUnknown, s2.code());
   EXPECT_EQ(std::string("unknown"), s1.message());
   EXPECT_EQ(std::string("unknown"), s2.message());
 
-  auto ok2 = util::OkStatus();
+  auto ok2 = absl::OkStatus();
   EXPECT_TRUE(ok2.ok());
-  EXPECT_EQ(util::StatusCode::kOk, ok2.code());
+  EXPECT_EQ(absl::StatusCode::kOk, ok2.code());
   EXPECT_EQ(std::string(""), ok2.message());
 
-  util::OkStatus().IgnoreError();
+  absl::OkStatus().IgnoreError();
   for (int i = 1; i <= 16; ++i) {
-    util::Status s(static_cast<util::StatusCode>(i), "message");
+    absl::Status s(static_cast<absl::StatusCode>(i), "message");
     EXPECT_TRUE(s.ToString().find("message") != std::string::npos)
         << s.ToString();
   }
@@ -448,4 +395,62 @@ TEST(UtilTest, StrSplitAsCSVTest) {
     EXPECT_EQ("1,2,3,4", v[1]);
   }
 }
+
+TEST(SentencePieceTrainerTest, DataDirTest) {
+  SetDataDir("foo/bar/buzz");
+  EXPECT_EQ(GetDataDir(), "foo/bar/buzz");
+
+  SetDataDir("");
+  EXPECT_EQ(GetDataDir(), "");
+
+  SetDataDir(INSTALL_DATADIR);
+  EXPECT_EQ(GetDataDir(), INSTALL_DATADIR);
+}
+
+TEST(BatchRunnerTest, EmptyTasks) {
+  ThreadPool pool(4);
+  auto status = RunBatch(0, [](size_t) { return absl::OkStatus(); }, pool);
+  EXPECT_TRUE(status.ok());
+}
+
+TEST(BatchRunnerTest, AllSuccess) {
+  ThreadPool pool(4);
+  const size_t total_tasks = 100;
+  std::vector<int> results(total_tasks, 0);
+
+  auto status = RunBatch(
+      total_tasks,
+      [&](size_t i) {
+        results[i] = i * 2;
+        return absl::OkStatus();
+      },
+      pool);
+
+  EXPECT_TRUE(status.ok());
+  for (size_t i = 0; i < total_tasks; ++i) {
+    EXPECT_EQ(results[i], i * 2);
+  }
+}
+
+TEST(BatchRunnerTest, EarlyAbortOnError) {
+  ThreadPool pool(4);
+  const size_t total_tasks = 100;
+  std::atomic<int> execution_count{0};
+
+  auto status = RunBatch(
+      total_tasks,
+      [&](size_t i) {
+        execution_count++;
+        if (i == 3) {
+          return absl::InternalError("Intentional failure at index 50");
+        }
+        absl::SleepFor(absl::Milliseconds(1));
+        return absl::OkStatus();
+      },
+      pool);
+
+  EXPECT_FALSE(status.ok());
+  EXPECT_LT(execution_count.load(), total_tasks);
+}
+
 }  // namespace sentencepiece

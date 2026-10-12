@@ -1,6 +1,6 @@
 // OnPair round-trip — six sub-variants exercising byte-completeness.
 // Bytewise round-trip MUST be exact at bits=16 over all 256 byte values.
-// Mirrors bpe_roundtrip_test coverage; canonical structural gate.
+// Mirrors bpe_roundtrip_test coverage.
 
 #include "onpair_runner.h"
 #include "runner_protocol.h"
@@ -102,6 +102,13 @@ static Column make_mixed_empty(uint32_t n_rows, size_t bytes_per_row) {
     return c;
 }
 
+static double metric(const OpResult& result, const std::string& name) {
+    for (const auto& [key, value] : result.metrics)
+        if (key == name) return value;
+    std::cerr << "[onpair_roundtrip] missing metric " << name << "\n";
+    return -1.0;
+}
+
 static int run_variant(const char* label, Column&& c) {
     namespace fs = std::filesystem;
     fs::path tmp = fs::temp_directory_path() / "onpair_roundtrip";
@@ -116,6 +123,16 @@ static int run_variant(const char* label, Column&& c) {
     if (res.status != "ok") {
         std::cerr << "[roundtrip:" << label << "] compress status=" << res.status
                   << " notes=" << res.notes << "\n";
+        return 1;
+    }
+    const double codec_first = metric(res, "t_train_ns")
+        + metric(res, "t_parse_pack_ns");
+    const double runner_first = metric(res, "t_compress_ns")
+        + metric(res, "t_serialize_ns");
+    if (metric(res, "t_codec_first_use_ns") != codec_first
+        || metric(res, "t_first_use_ns") != runner_first) {
+        std::cerr << "[roundtrip:" << label
+                  << "] phase timing identity failed\n";
         return 1;
     }
     auto resd = r.bulk_decode(cz_path.string(), de_path.string(), "{}");

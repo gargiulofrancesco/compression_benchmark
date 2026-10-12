@@ -1,8 +1,8 @@
-"""step 1 — deterministic-last-fraction held-out splitter contract.
+"""Deterministic-last-fraction held-out splitter contract.
 
-Plan §12.3 (rev-2): heldout = deterministic last 20% by row order.
+heldout = deterministic last 20% by row order.
 
-The 5 invariants (per ):
+The 5 invariants:
   (a) N_train + N_heldout == N_total
   (b) bytewise concatenation: train ++ heldout == original column bytes
   (c) idempotent: same input → same output bytes across re-runs

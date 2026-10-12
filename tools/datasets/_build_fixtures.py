@@ -40,10 +40,9 @@ def main() -> int:
         column_map={"titles":  "dblp__titles.fixture.col",
                     "authors": "dblp__authors.fixture.col"},
     )
-    # NOTE: dbpedia / msmarco_urls / msmarco_queries extractors have no committed
-    # raw fixtures yet — add small samples under testdata/datasets/ + oracle tests
-    # when authoring them. clickbench/wikipedia/geonames/imdb removed 2026-06-08
-    # (out of the high-cardinality scope).
+    # NOTE: the amazon / dbpedia / msmarco_urls / msmarco_queries extractors have
+    # no committed raw fixtures; adding one means a small sample under
+    # testdata/datasets/ plus an oracle test.
     print("\ndone.")
     return 0
 

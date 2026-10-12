@@ -3,9 +3,7 @@
 // Pack/unpack streams of (pos, len, literal) triples where each component
 // has an independent bit width. LSB-first within each byte; triples written
 // in increasing position order (component order within each triple: pos,
-// then len, then literal). First lineup consumer is the RLZ runner; OnPair
-// may reuse the degenerate uniform-width case (bits_pos == bits_len ==
-// bits_lit) if its native packer is removed.
+// then len, then literal). Used by the RLZ runner.
 
 #include <cstddef>
 #include <cstdint>

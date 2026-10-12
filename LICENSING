@@ -16,8 +16,9 @@ Permissive-only binaries
   zstd_runner           Zstandard (BSD-3-Clause arm of the dual licence)
   rlz_runner            libdivsufsort (MIT); RLZ algorithm implemented
                         in-repo (runners/rlz/rlz_core.{h,cpp})
-  bpe_runner            SentencePiece v0.2.0 (Apache-2.0) with its bundled
-                        permissive snapshots (absl Apache-2.0, protobuf-lite
+  bpe_runner            SentencePiece v0.2.2 (Apache-2.0) with its bundled
+                        permissive snapshots and Abseil, which its build
+                        fetches (abseil-cpp Apache-2.0, protobuf-lite
                         BSD-3-Clause-Google, darts_clone BSD-2-Clause,
                         esaxx MIT)
 

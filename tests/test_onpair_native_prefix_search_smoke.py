@@ -1,9 +1,8 @@
 """OnPair NativeOnCompressed prefix-search smoke. Drives the runner via
-NDJSON; G6 bit-equality of OnPair's `starts_with` (PrefixAutomaton over
+NDJSON; hit-set equality of OnPair's prefix_search (PrefixAutomaton over
 bit-packed tokens, no decompression) vs Python's canonical scan.
 
-§8.10 reviewer-disclosure surface in Python smoke form. First and only
-NativeOnCompressed claimant in the lineup.
+The only NativeOnCompressed claimant in the lineup.
 """
 from __future__ import annotations
 
@@ -83,12 +82,21 @@ def test_onpair_native_prefix_search(tmp_path: Path) -> None:
             proc.stdin.write(json.dumps(op) + "\n"); proc.stdin.flush()
             pres = json.loads(proc.stdout.readline())
             assert pres["status"] == "ok", pres
+            metrics = {item["name"]: item["value"]
+                       for item in pres["metrics"]}
+            assert metrics["n_hits"] >= 0
+            assert metrics["num_rows"] == len(rows)
+            assert metrics["needle_bytes"] == len(needle)
+            assert metrics["t_query_prepare_ns"] >= 0
+            assert metrics["t_scan_ns"] > 0
+            assert metrics["t_search_ns"] >= metrics["t_scan_ns"]
             with open(hits_path, "rb") as f:
                 nh = struct.unpack("<I", f.read(4))[0]
                 got = list(struct.unpack(f"<{nh}I", f.read(nh * 4))) if nh else []
+            assert metrics["n_hits"] == nh
             expected = [i for i, r in enumerate(rows) if r.startswith(needle)]
             assert got == expected, (
-                f"G6 mismatch needle={needle!r}: native={got[:5]}... "
+                f"prefix-search mismatch needle={needle!r}: native={got[:5]}... "
                 f"(n={len(got)}) expected={expected[:5]}... (n={len(expected)})")
 
         proc.stdin.write(json.dumps({"type": "bye"}) + "\n")

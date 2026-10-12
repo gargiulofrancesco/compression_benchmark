@@ -1,9 +1,10 @@
 // ZstdRunner implementation. See zstd_runner.h for class shape.
 // Wire format on disk:
-//   [N u32][B u32][block_offsets[B+1] u32][block_first_string[B+1] u32][compressed_blocks[total] u8]
-// Each block uncompressed payload =
-//   [k u32][within_offsets[k+1] u32][strings[total_block_bytes] u8]
-// Boundary cost billed PRE-COMPRESSION (boundaries-conservative; never over-credits zstd).
+//   [N u32][B u32][block_offsets[B+1] u32][block_first_string[B+1] u32]
+//   [within_offsets[N+B] u32][compressed_blocks[total] u8]
+// Each block's uncompressed payload is its strings concatenated; the k+1 local
+// row offsets of every block are stored uncompressed in within_offsets and
+// billed to boundaries_bytes.
 
 #include "zstd_runner.h"
 #include "decompress_then_scan.h"
@@ -66,7 +67,7 @@ BlockPlan plan_blocks(const Column& col, uint32_t block_budget_bytes) {
     return plan;
 }
 
-// step 6 (A5): block boundaries every `block_strings` rows. Mirrors
+// A5 sweep: block boundaries every `block_strings` rows. Mirrors
 // plan_blocks' [0, ..., N] shape but partitions by string count, not bytes.
 BlockPlan plan_blocks_by_strings(const Column& col, uint32_t block_strings) {
     BlockPlan plan;
@@ -79,9 +80,9 @@ BlockPlan plan_blocks_by_strings(const Column& col, uint32_t block_strings) {
 }
 
 // Build one block's PAYLOAD (the strings concatenated, no header) and append its
-// k+1 LOCAL row offsets (0..payload_size) to woff. The row offsets used to live in
-// front of the payload inside the compressed frame; they now travel uncompressed on
-// the wire so the frame is payload-only and decode is single-pass.
+// k+1 LOCAL row offsets (0..payload_size) to woff. The row offsets travel
+// uncompressed on the wire (not inside the compressed frame), so the frame is
+// payload-only and decode is single-pass.
 void build_block_payload(const Column& col, uint32_t lo, uint32_t hi,
                          std::vector<uint8_t>& payload,
                          std::vector<uint32_t>& woff) {
@@ -135,7 +136,7 @@ ZstdWire read_wire(const std::string& in_path) {
 }
 
 // Self-sizing single-block PAYLOAD decode for the non-bulk callers (random_decode,
-// ra_latency): frame content size == block payload size (header no longer in frame).
+// ra_latency): frame content size == block payload size (no header in the frame).
 void decode_block(ZSTD_DCtx* dctx, const ZstdWire& w, uint32_t b,
                   std::vector<uint8_t>& out) {
     const uint8_t* src = w.compressed_blocks.data() + w.block_offsets[b];
@@ -161,7 +162,7 @@ void zstd_prealloc(const ZstdWire& w, Column& out) {
 // PAYLOAD-ONLY decode into the PRE-ALLOCATED out.bytes — the timed codec region.
 // Each compressed frame IS the block's payload, so it decompresses straight into
 // the column at the running payload offset: ONE pass, no scratch, no second
-// payload-concat copy (that copy was a ~14-27% measurement artifact onpair/bpe/rlz
+// payload-concat copy (such a copy would cost ~14-27% that onpair/bpe/rlz
 // don't pay). No per-row offset bookkeeping here — offsets are rebuilt UNTIMED by
 // build_offsets() from the wire for the round-trip output only.
 void decode_all_payload(ZSTD_DCtx* dctx, const ZstdWire& w, Column& out) {
@@ -273,8 +274,8 @@ OpResult ZstdRunner::compress(const std::string& in_path,
         block_offsets[b] = static_cast<uint32_t>(compressed_blocks.size());
         compressed_blocks.insert(compressed_blocks.end(), frame.begin(), frame.begin() + csize);
 
-        // The frame is now payload-only, so its compressed size IS the codec's
-        // token cost exactly (no header-subtraction estimate).
+        // The frame is payload-only, so its compressed size IS the codec's
+        // token cost exactly.
         tokens_bytes_acc += csize;
     }
     block_offsets[B] = static_cast<uint32_t>(compressed_blocks.size());
@@ -385,9 +386,9 @@ OpResult ZstdRunner::prefix_search(const std::string& in_path,
     return r;
 }
 
-// step 6 (A5). Times n_samples uniform random accesses; each pays the
-// full cost of decoding the enclosing block (so L_ra grows with block size —
-// the degrading-baseline curve of figure A5). No file I/O inside the timed
+// Times n_samples random accesses; each pays the
+// full cost of decoding the enclosing block (so L_ra grows with block size,
+// as the A5 block-size sweep shows). No file I/O inside the timed
 // loop. config_json: n_samples (default 1e6), seed (42), warmup (1 → one
 // warm pre-pass decode_all before timing; 0 → cold-ish, no in-process warmup).
 OpResult ZstdRunner::ra_latency(const std::string& in_path,
@@ -413,17 +414,17 @@ OpResult ZstdRunner::ra_latency(const std::string& in_path,
 
         // Query indices generated up-front (A6: distribution + layout from cfg)
         // so the distribution math never enters the timed region. zstd is
-        // block-based: each timed access decodes the enclosing block, so under
-        // the `scramble` layout the hot set is scattered across blocks and L_ra
-        // degrades (the A6 worst case for block formats).
+        // block-based: each timed access decodes the enclosing block; under
+        // the `scramble` layout the hot set is scattered across blocks (the
+        // layout A6 pairs with `identity`).
         const QuerySpec qspec = parse_query_spec(cfg_json);
         const std::vector<uint64_t> indices =
             generate_query_indices(qspec, n_samples, w.N, seed);
 
-        // Batched timing (latency_stats.h). Each access decodes the enclosing
-        // block, locates the row, and returns a payload byte; the accumulated,
-        // barrier'd value forces the block decode (anti-DCE) and K is auto-tuned
-        // to the clock. Identical primitive across every baseline.
+        // Per-access rdtscp timing (ra_timer_tsc.h). Each access decodes the
+        // enclosing block, locates the row, and returns a payload byte; the
+        // accumulated, barrier'd value forces the block decode (anti-DCE).
+        // Identical primitive across every baseline.
         std::vector<uint8_t> raw;
         RaLatencyResult m;
         std::string ra_reason;

@@ -1,4 +1,4 @@
-# OnPair runner — (last; closes ).
+# OnPair runner.
 #
 # Consumes the OnPair library via the FetchContent target `onpair`
 # (declared by external/onpair_cpp.cmake; aliased OnPair::onpair upstream).

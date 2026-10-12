@@ -1,4 +1,4 @@
--- Phase 5 step 2 — A1 ablation results store.
+-- A1 ablation results store (adaptive vs fixed thresholds).
 -- Wide-format paired schema: one row per (dataset, column, T) with both
 -- Fixed{T} and matched-Dynamic{f} metric blocks side by side. Pairing is
 -- guaranteed apples-to-apples by the protocol (both trainers see identical
@@ -6,8 +6,8 @@
 -- budget via sample_bytes_consumed-matched fraction).
 --
 -- This file is consumed by experiments/a1_driver.py at db init time;
--- build/a1_results.sqlite is NOT the headline results.sqlite. F4 plot
--- (Phase 6) reads from here.
+-- build/a1_results.sqlite is NOT the headline results.sqlite. Fig. 6 (left)
+-- is drawn from here.
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;

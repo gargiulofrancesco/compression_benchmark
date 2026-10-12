@@ -2,8 +2,8 @@
 R%=5%. Pure C++ + libdivsufsort implementation. Target bit-tight identity:
     R_len + ceil(P_total * (bits_per_pos + bits_per_len + 8) / 8) + (28 + 4*(N+1))
         == output_bytes
-(revised bits_per_len default 8 — short-string len field —
- and stored on the wire, so the scalar header grew 24 -> 28 bytes.)
+(bits_per_len, default 8 for the short-string len field, is
+ stored on the wire; the scalar header is 28 bytes.)
 """
 from __future__ import annotations
 

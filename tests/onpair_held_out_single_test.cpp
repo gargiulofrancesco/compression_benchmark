@@ -1,4 +1,4 @@
-// step 3 — A3 ablation: held_out_compress single-strategy contract.
+// A3 ablation: held_out_compress single-strategy contract.
 //
 // Generates a 200-row synthetic column, manually splits 160/40 train/heldout,
 // runs the held_out_compress op in single-strategy mode

@@ -1,5 +1,5 @@
 #pragma once
-// ZstdRunner — block-framed two-level column store see docs/benchmark/fairness/zstd.md.
+// ZstdRunner — block-framed two-level column store; see docs/benchmark/fairness/zstd.md.
 // Public class so unit tests can drive it without going through the NDJSON protocol.
 
 #include "runner_protocol.h"
@@ -16,7 +16,7 @@ namespace onpair_bench {
 struct ZstdConfig {
     int level                  = 3;
     uint32_t block_budget_bytes = 1u << 20;  // 1 MiB
-    // step 6 (A5): when > 0, each block holds exactly this many strings
+    // When > 0, each block holds exactly this many strings
     // (the A5 block-size-in-strings sweep) and block_budget_bytes is ignored.
     // 0 (default) keeps the headline byte-budget planning untouched.
     uint32_t block_strings      = 0;
@@ -65,7 +65,7 @@ public:
                            const std::string& needle,
                            const std::string& out_path,
                            const std::string& config_json) override;
-    // step 6 (A5): times n_samples block-decode random accesses.
+    // Times n_samples block-decode random accesses.
     OpResult ra_latency(const std::string& in_path,
                         const std::string& out_path,
                         const std::string& config_json) override;

@@ -1,16 +1,16 @@
-# step 6 — A5 ablation grid (block-size sweep vs random-access latency).
+# A5 ablation grid (block-size sweep vs random-access latency; Section VIII-E).
 #
-# Sweep: block size ∈ {64, 256, 1K, 4K, 16K, 64K} strings (.7 row A5),
+# Sweep: block size ∈ {64, 256, 1K, 4K, 16K, 64K} strings,
 #        x = block size, y = L_ra p50/p95/p99, datasets = MS MARCO URL +
-#        TPC-H c_comment, cache = cold + warm, RQ4 / V-I.
+#        TPC-H c_comment, cache = cold + warm.
 #
-# CROSS-BASELINE REFRAME: OnPair has NO block knob
-# (decompress(idx) seeks per-string via the global boundaries — §5.4 O(|s_i|)),
+# CROSS-BASELINE DESIGN: OnPair has NO block knob
+# (decompress(idx) seeks per-string via the global boundaries — Section V, O(|s_i|)),
 # so block size cannot move OnPair's L_ra. A5 therefore sweeps block size on the
 # BLOCK-BASED baselines (zstd, lz4 — each must decode the enclosing block to
 # answer one point query, so their L_ra degrades as block size grows) and plots
 # OnPair as a single FLAT reference line (block-independent). RLZ is excluded:
-# its block_size is locked to 16384  and cannot sweep. See
+# its block_size is fixed at 16384 and cannot sweep. See
 # schema/a5_results.sql for the full design note.
 #
 # Each (baseline, dataset, column, block_size, cache_state) cell: compress the
@@ -21,14 +21,15 @@
 #
 # Grid: 2 cols × 6 block sizes × 2 block-based baselines × 2 cache states = 48
 #       block cells + 2 cols × 2 cache states × 1 flat baseline = 4 OnPair cells.
-# Real-data only (requires `make datasets`); runs on a measurement rig via
-# `make a5`. NOT part of `make smoke`.
+# Real-data only (requires `make datasets`); runs via `make a5`. Latencies
+# need x86-64 with the performance governor and turbo off (refused-env
+# otherwise). NOT part of `make smoke`.
 
 block_sizes:    [64, 256, 1024, 4096, 16384, 65536]
 baselines:      [zstd, lz4]        # block-based; block size sweeps
 flat_baseline:  onpair             # block-independent flat reference line
 cache_states:   [warm, cold]
-n_samples:      20000   # 1e6 -> 2e4 — at 64K-string blocks one access decodes ~MB (ms-scale); 2e4 gives stable p50/p95/p99 and keeps the grid tractable. Disclosed in §8.7.
+n_samples:      20000   # 1e6 -> 2e4 — at 64K-string blocks one access decodes ~MB (ms-scale); 2e4 gives stable p50/p95/p99 and keeps the grid tractable. Stated in Section VIII-E.
 seed:           42
 query_distribution: uniform
 
@@ -38,7 +39,7 @@ columns:
 
 smoke:
   # Single warm probe each for a block-based baseline (zstd @ block=256) and the
-  # flat baseline (onpair) against the committed V-D fixture (1000 rows), used
+  # flat baseline (onpair) against the committed synthetic fixture (1000 rows), used
   # whole. n_samples kept tiny so the smoke runs in <1 sec. No real-data dep.
   fixture_path: testdata/datasets/synthetic_vd__L32_sigma16_rho0.7_seed42_n1000.fixture.col
   dataset: synthetic_vd_smoke_fixture

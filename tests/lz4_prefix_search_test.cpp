@@ -1,4 +1,4 @@
-// G6 self-consistency: lz4's prefix_search hit-set must match the canonical
+// Prefix-search check: lz4's prefix_search hit-set must match the canonical
 // scan_prefix output bytewise on the 16 fixed needles.
 
 #include "lz4_runner.h"

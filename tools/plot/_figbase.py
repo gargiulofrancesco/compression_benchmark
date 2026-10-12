@@ -1,11 +1,11 @@
-"""— shared figure/table helpers.
+"""Shared figure/table helpers.
 
 Every F*/T*/A* renderer imports this for: pinned matplotlib rcParams (mirrors
-figure_template.py for the reproducible-env lock), safe sqlite access
+figure_template.py), safe sqlite access
 (returns None when a store is absent so `make figures` runs after a partial set
 of benchmark runs), derived-quantity helpers (throughput / ratio are NOT runner
-metrics — they are derived here from raw input_bytes / output_bytes / t_op_ns),
-a stable baseline ordering, and CSV+Markdown table writers.
+metrics — they are derived here from the runners' byte sub-counters and codec
+timers), a stable baseline ordering, and CSV+Markdown table writers.
 
 Renderers do not raise on a missing store; they return [] so render_all can skip
 cleanly. They DO raise on a malformed-but-present store (a real bug).
@@ -26,8 +26,8 @@ matplotlib.rcParams["figure.dpi"] = 100
 import matplotlib.pyplot as plt  # noqa: E402
 
 
-# Stable left-to-right / legend ordering across every figure (paper §6 lineup;
-# OnPair last so it is visually the "punchline" series). Unknown baselines sort
+# Stable left-to-right / legend ordering across every figure (lineup order;
+# OnPair last). Unknown baselines sort
 # to the end alphabetically.
 BASELINE_ORDER = [
     "uncompressed", "zstd", "lz4", "fsst", "fsst_scalar", "repair", "bpe",
@@ -78,7 +78,7 @@ def ratio(conn: sqlite3.Connection, baseline: str,
           dataset: str | None = None) -> float | None:
     """PAYLOAD-ONLY compression ratio  R = input_bytes / (dict_bytes + tokens_bytes).
 
-    Decision: this benchmark measures STRING-PAYLOAD compression and
+    This benchmark measures STRING-PAYLOAD compression and
     does NOT compress the per-row string offsets (the (N+1)*4 boundary array that
     every baseline carries verbatim in `boundaries_bytes`). We therefore EXCLUDE
     string offsets from the ratio: the denominator is the compressed model +

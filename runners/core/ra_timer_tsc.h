@@ -1,34 +1,30 @@
 #pragma once
-// step 7 (A6) — SHIPPING random-access latency measurement path.
+// SHIPPING random-access latency measurement path.
 //
-// x86_64 invariant-TSC (rdtscp) timing: the headline L_ra path on the x86 Linux
-// measurement rig. rdtscp has ~6 ns overhead and 1-cycle resolution, so a single
+// x86_64 invariant-TSC (rdtscp) timing: the L_ra path of every point-access
+// measurement (x86-64 Linux). rdtscp has ~6 ns overhead and 1-cycle resolution, so a single
 // access (≈10 ns per-string up to µs cache-miss) is timed PER-ACCESS (K=1),
 // preserving the tail that batched std::chrono would compress. The portable
 // batched-chrono primitive in latency_stats.h (measure_ra_latency) is kept ONLY
 // as a NON-shipping correctness oracle (tests/ra_measure_test.cpp), never as a
 // measurement path.
 //
-// Hardware requirements, ASSERTED at startup; measurement is REFUSED (the op
-// returns status="refused-env") if any is unmet:
+// What the timer needs, ASSERTED at startup; measurement is REFUSED (the op
+// returns status="refused-env") if either is unmet:
 //   - invariant TSC: constant_tsc + nonstop_tsc        (/proc/cpuinfo flags)
-//   - scaling governor == "performance"                (/sys .../scaling_governor)
-//   - turbo disabled: intel_pstate/no_turbo==1 OR cpufreq/boost==0
 //   - thread pinned to one CPU                          (sched_setaffinity)
-// These are two INDEPENDENT requirements from the AVX-512 fairness constraint
-// (Ice Lake / Sapphire Rapids for FSST, V-A): any server-class x86 Linux box can
-// satisfy the TSC requirements; AVX-512 dispatch is verified separately and
-// recorded in the environment fingerprint (rig task).
+// Any x86-64 Linux machine with an invariant TSC satisfies them. The frequency
+// governor and turbo are not among them: an invariant TSC ticks at a constant
+// rate whatever the core's frequency, so they change how fast the timed code
+// runs, not whether the timer is right. They are the setup of a measurement,
+// reported by tools/check_env.py and insisted on only under STRICT_ENV=1.
 //
 // TSC→ns calibration: TSC cycles measured against CLOCK_MONOTONIC over a short
 // window → tsc_ghz; per-access ns = (cycles − calibrated rdtscp-pair overhead) /
 // tsc_ghz, floored at 0.
 //
-// ⚠️ UNVERIFIED: this header was written on an arm64 (Apple) dev box where the
-// x86 block is preprocessed out — it has NOT been compiled, run, or measured.
-// Build/run/verify (timing correctness, TSC asserts, plausible per-access tail,
-// FSST AVX-512 dispatch) is RIG-GATED ( "write rdtscp
-// now, rig-verify later"). On any non-x86 build the op cleanly refuses.
+// On a non-x86 build the x86 block below is preprocessed out and the op
+// refuses to measure.
 
 #include "latency_stats.h"   // LatencyStats, compute_latency_stats, RaLatencyResult, ra_keep
 
@@ -75,18 +71,11 @@ inline bool cpuinfo_has(const char* flag) {
     return false;
 }
 
-inline std::string read_first_line(const char* path) {
-    std::ifstream f(path);
-    std::string s;
-    if (f) std::getline(f, s);
-    return s;
-}
-
 inline uint64_t rdtscp_now() { unsigned aux; return __rdtscp(&aux); }
 
 } // namespace ra_tsc_detail
 
-// Check the TSC measurement prerequisites, pin the thread, calibrate TSC→GHz.
+// Check for an invariant TSC, pin the thread, calibrate TSC→GHz.
 // Returns env.ok=false with a specific reason if any requirement is unmet.
 inline RaTscEnv ra_tsc_setup() {
     using namespace ra_tsc_detail;
@@ -97,22 +86,6 @@ inline RaTscEnv ra_tsc_setup() {
                    "/proc/cpuinfo)";
         return e;
     }
-    const std::string gov = read_first_line(
-        "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor");
-    if (gov != "performance") {
-        e.reason = "scaling_governor='" + gov + "' (need 'performance')";
-        return e;
-    }
-    const std::string no_turbo =
-        read_first_line("/sys/devices/system/cpu/intel_pstate/no_turbo");
-    const std::string boost =
-        read_first_line("/sys/devices/system/cpu/cpufreq/boost");
-    if (!(no_turbo == "1" || boost == "0")) {
-        e.reason = "turbo not disabled (need intel_pstate/no_turbo=1 or "
-                   "cpufreq/boost=0)";
-        return e;
-    }
-
     cpu_set_t set;
     CPU_ZERO(&set);
     int cpu = sched_getcpu();
@@ -209,7 +182,7 @@ namespace onpair_bench {
 inline RaTscEnv ra_tsc_setup() {
     return RaTscEnv{false,
         "ra_latency requires an x86_64 invariant-TSC (rdtscp) build; this is a "
-        "non-x86 build — measurement refused (rig-only)",
+        "non-x86 build — measurement refused",
         0.0, 0.0, -1};
 }
 
@@ -218,7 +191,7 @@ inline bool ra_measure_shipping(const std::vector<uint64_t>& /*indices*/,
                                 AccessFn&& /*access*/,
                                 RaLatencyResult& /*out*/, std::string& reason) {
     reason = "ra_latency requires an x86_64 invariant-TSC (rdtscp) build; this "
-             "is a non-x86 build — measurement refused (rig-only)";
+             "is a non-x86 build — measurement refused";
     return false;
 }
 

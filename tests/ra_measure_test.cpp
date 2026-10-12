@@ -1,11 +1,12 @@
-// step 7 (A6) — unit test for the shared random-access latency
-// MEASUREMENT primitive (runners/core/latency_stats.h measure_ra_latency).
+// Unit test for the batched random-access latency
+// primitive (runners/core/latency_stats.h measure_ra_latency), the portable
+// oracle kept next to the rdtscp path that the runners use.
 //
 // Regression guard for the 41 ns / 0 ns timer artifact: with a sub-tick "decode"
 // the per-access result must still be a plausible NON-zero value (batched timing
 // + anti-DCE), never 0. Also checks the adaptive K (small for slow accesses,
 // large for fast ones), percentile ordering, and the degenerate empty case.
-// This is the fairness-primitive invariant the auditor re-runs: no baseline may
+// The invariant: no baseline may
 // report a sub-nanosecond p50, and the timing path must be DCE-proof.
 
 #include "latency_stats.h"

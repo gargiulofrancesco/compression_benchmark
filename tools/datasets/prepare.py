@@ -4,8 +4,15 @@ Reads experiments/datasets.yaml, dispatches per-entry to its extractor module,
 invokes the held-out splitter on each output column. Network IO + duckdb
 invocation happen here; smoke does NOT call this script.
 
+By default only the columns the paper reports (`headline: true` in the
+manifest) are materialised: five sources, six columns, about 14 GB of
+downloads. `--extra-columns` adds the other columns the manifest declares
+(TPC-H l_comment, c_address, s_comment and the DBLP dump), which no experiment
+of the paper reads.
+
 CLI:
   python -m tools.datasets.prepare --all
+  python -m tools.datasets.prepare --all --extra-columns
   python -m tools.datasets.prepare --dataset amazon --dataset tpch
   python -m tools.datasets.prepare --dataset tpch --skip-extract
   python -m tools.datasets.prepare --all --update-checksums
@@ -29,8 +36,15 @@ def _load_manifest(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def paper_columns(entry: dict) -> dict:
+    """The entry restricted to the columns the paper reports (`headline: true`).
+    An entry without such a column comes back with an empty column list."""
+    kept = [c for c in entry.get("columns") or [] if c.get("headline")]
+    return {**entry, "columns": kept}
+
+
 def _dispatch_entry(entry: dict, raw_dir: Path, columns_dir: Path,
-                    skip_extract: bool, update_checksums: bool) -> dict[str, str]:
+                    skip_extract: bool) -> dict[str, str]:
     """Run one dataset entry: download → SHA-256 verify → extract → heldout-split.
     Returns observed-output-SHA-256 per column for manifest write-back."""
     name = entry["name"]
@@ -50,8 +64,8 @@ def _dispatch_entry(entry: dict, raw_dir: Path, columns_dir: Path,
     # Idempotent resume: if every declared column is already materialised
     # (size > 0), skip the (expensive) download + extract entirely and just
     # recompute checksums / ensure heldout splits below. Lets a re-run after a
-    # mid-pipeline failure (e.g. a transient dblp 503) avoid re-parsing the 16 GB
-    # ClickBench TSV, and still write back ALL checksums on the final pass.
+    # mid-pipeline failure (e.g. a transient dblp 503) avoid re-parsing a
+    # multi-GB dump, and still write back ALL checksums on the final pass.
     declared = entry.get("columns") or []
     expected = {c["name"]: col_target / c["output_filename"] for c in declared}
     already = bool(expected) and all(
@@ -79,8 +93,8 @@ def _dispatch_entry(entry: dict, raw_dir: Path, columns_dir: Path,
         col_decl = next((c for c in declared if c["name"] == col_name), {})
         N, U = cardinality(col_path)
         frac = U / N if N else 0.0
-        flag = "  [!] LOW-CARDINALITY for a headline column" if (
-            col_decl.get("headline") and frac < 0.90) else ""
+        flag = "  [!] fewer than 85% distinct rows in a column of the paper" if (
+            col_decl.get("headline") and frac < 0.85) else ""
         print(f"    cardinality: N={N} U={U} U/N={frac:.4f}{flag}")
 
         # Held-out split: produce <col>.train.col + <col>.heldout.col next to <col>.col.
@@ -97,15 +111,40 @@ def _dispatch_entry(entry: dict, raw_dir: Path, columns_dir: Path,
                 print(f"    heldout split: N_train={n_train}, N_heldout={n_held} "
                       f"(fraction={frac})")
 
-    if update_checksums:
-        _writeback_checksums(entry, observed)
-
     return observed
+
+
+def _is_digest(value) -> bool:
+    return (isinstance(value, str) and len(value) == 64
+            and all(c in "0123456789abcdef" for c in value))
+
+
+def check_recorded_checksums(entry: dict, observed: dict[str, str]) -> list[str]:
+    """Compare each materialised column with the SHA-256 the manifest records.
+    Returns the headline columns that differ: those are the paper's inputs, so
+    a difference means the measurements would not be on the published bytes.
+    Other columns (e.g. from a rolling dump) only get a warning."""
+    recorded = entry.get("output_sha256") or {}
+    headline = {c["name"] for c in entry.get("columns") or [] if c.get("headline")}
+    failed = []
+    for col, sha in observed.items():
+        want = recorded.get(col)
+        if not _is_digest(want):
+            continue
+        if sha == want:
+            print(f"  {col}: matches the recorded sha256")
+        elif col in headline:
+            print(f"  {col}: [!] sha256 {sha} differs from the recorded {want}")
+            failed.append(f"{entry['name']}/{col}")
+        else:
+            print(f"  {col}: warning: sha256 differs from the recorded value "
+                  f"(not a headline column)")
+    return failed
 
 
 def _writeback_checksums(entry: dict, observed: dict[str, str]) -> None:
     """Patch the manifest entry's output_sha256 in-place with observed values
-    when the existing value is TBD-AT-INTEGRATION."""
+    when the existing value is missing or the "TBD-AT-INTEGRATION" marker."""
     target = entry.setdefault("output_sha256", {})
     for col, sha in observed.items():
         if target.get(col) in (None, "TBD-AT-INTEGRATION"):
@@ -119,6 +158,8 @@ def main() -> int:
     p.add_argument("--columns-dir",  type=Path, default=REPO_ROOT / "datasets/materialized")
     p.add_argument("--dataset",      action="append", help="repeatable; default = all real entries")
     p.add_argument("--all",          action="store_true")
+    p.add_argument("--extra-columns", action="store_true",
+                   help="also materialise the columns no experiment of the paper reads")
     p.add_argument("--skip-extract", action="store_true")
     p.add_argument("--update-checksums", action="store_true",
                    help="write observed post-extraction SHA-256 back into the manifest")
@@ -134,14 +175,27 @@ def main() -> int:
         # default: same as --all real entries
         entries = [e for e in entries if e.get("kind") == "real"]
 
+    failed: list[str] = []
     for entry in entries:
-        _dispatch_entry(entry, a.raw_dir, a.columns_dir, a.skip_extract, a.update_checksums)
+        selected = entry if a.extra_columns else paper_columns(entry)
+        if entry.get("kind") == "real" and not selected["columns"]:
+            print(f"\n=== {entry['name']} ===\n  no column of the paper; "
+                  f"skipped (--extra-columns materialises it)")
+            continue
+        observed = _dispatch_entry(selected, a.raw_dir, a.columns_dir, a.skip_extract)
+        if a.update_checksums:
+            _writeback_checksums(entry, observed)
+        failed += check_recorded_checksums(entry, observed)
 
     if a.update_checksums:
         with open(a.manifest, "w") as f:
             yaml.safe_dump(manifest, f, sort_keys=False)
         print(f"\nmanifest checksums written back → {a.manifest}")
 
+    if failed:
+        print(f"\nprepare: {len(failed)} headline column(s) differ from the recorded "
+              f"checksums: {', '.join(failed)}")
+        return 1
     print("\nprepare: done.")
     return 0
 

@@ -1,4 +1,4 @@
-// step 7 (A6) — unit test for the shared query-index generator
+// Unit test for the shared query-index generator
 // (runners/core/query_sampler.h). This is the component the A6 ra_latency ops
 // reuse across every baseline, so it is verified once here, independently of any
 // runner: parse correctness, in-range output, determinism, the per-distribution

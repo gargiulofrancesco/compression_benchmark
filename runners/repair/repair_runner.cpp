@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
@@ -270,7 +271,8 @@ struct RaIndex {
     std::vector<uint32_t> grammar;     // 2*rules (left,right)
     std::vector<uint32_t> seq;         // top-level symbols
     std::vector<uint32_t> rule_len;    // expansion length per rule
-    std::vector<uint64_t> seq_prefix;  // size n_seq+1, byte offset per symbol
+    std::vector<uint32_t> seq_prefix;  // size n_seq+1, byte offset per symbol
+                                       // (32 bits, like row_offsets)
     std::vector<uint32_t> row_offsets; // size N+1 (byte offsets into decoded)
 };
 
@@ -294,13 +296,16 @@ RaIndex build_ra_index(const LoadedWire& w) {
                            sym_len(ix.grammar[2u * r + 1u]);
         ix.rule_len[r] = static_cast<uint32_t>(l);
     }
+    // Byte offsets fit 32 bits: the row offsets of the wire already do.
+    if (w.decoded_bytes > UINT32_MAX)
+        throw std::runtime_error("repair: column too large for the ra index");
     ix.seq_prefix.resize(w.n_seq + 1);
     uint64_t cum = 0;
     for (size_t i = 0; i < w.n_seq; ++i) {
-        ix.seq_prefix[i] = cum;
+        ix.seq_prefix[i] = static_cast<uint32_t>(cum);
         cum += sym_len(ix.seq[i]);
     }
-    ix.seq_prefix[w.n_seq] = cum;
+    ix.seq_prefix[w.n_seq] = static_cast<uint32_t>(cum);
     if (cum != w.decoded_bytes)
         throw std::runtime_error("repair: ra index prefix-sum mismatch");
     return ix;
@@ -453,6 +458,12 @@ OpResult RepairRunner::ra_latency(const std::string& in_path,
         r.metrics.emplace_back("batch_k",      static_cast<double>(m.batch_k));
         r.metrics.emplace_back("clock_resolution_ns", m.clock_resolution_ns);
         r.metrics.emplace_back("num_rows",     static_cast<double>(w.N));
+        // Resident size of the load-time access index (not part of the
+        // compressed size; reported so decode-time support can be stated).
+        r.metrics.emplace_back("ra_index_bytes", static_cast<double>(
+            sizeof(uint32_t) * (ix.grammar.size() + ix.seq.size()
+                                + ix.rule_len.size() + ix.row_offsets.size()
+                                + ix.seq_prefix.size())));
         return r;
     } catch (const std::bad_alloc&) {
         return OpResult{.status = "oom", .notes = "repair: bad_alloc ra_latency"};

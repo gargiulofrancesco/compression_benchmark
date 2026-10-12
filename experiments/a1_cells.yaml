@@ -3,6 +3,7 @@ fixed_thresholds:
 - 3
 - 5
 - 8
+- 10
 - 12
 - 20
 - 32

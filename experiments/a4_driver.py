@@ -1,4 +1,4 @@
-"""step 5 — A4 ablation driver (capacity sweep).
+"""A4 ablation driver (capacity sweep with timings and training memory).
 
 Drives the OnPair runner via the standard NDJSON protocol. For each
 (dataset, column, capacity) cell in experiments/a4_cells.yaml, compresses the
@@ -10,7 +10,7 @@ capacity ≡ 2^bits: OnPair has no independent
 capacity knob — TrainingConfig defines max dict size = 2^bits — so the sweep is
 over `bit_widths` and `capacity = 1<<b` is derived/stored alongside.
 
-Like A2 this adds NO new runner op and NO upstream OnPair change: R / T_d / |D|
+Like A2 this needs NO dedicated runner op and NO upstream OnPair change: R / T_d / |D|
 / T_c reuse the existing `compress` + `bulk_decode` ops and their dispatch-loop
 `t_op_ns`. The one quantity A2 lacks — M_train (peak RSS during encode) — is
 captured WITHOUT C++:
@@ -22,10 +22,10 @@ captured WITHOUT C++:
 
 ru_maxrss is normalized to BYTES (macOS reports bytes; Linux reports KiB). The
 result is the whole compress-process high-water (incl. column I/O + the
-train+encode+write region) — "peak RSS during encode" per.6.
+train+encode+write region).
 
 Modes:
-  --smoke         : single cell (capacity=2¹²=4096) against the committed V-D
+  --smoke         : single cell (capacity=2¹²=4096) against the committed synthetic
                     fixture, used whole (no split). <1 sec.
   default         : full grid against datasets/materialized/<dataset>/<col>.col
                     full-column files (produced by `make datasets`).
@@ -309,7 +309,7 @@ def _flags_sha(default: str) -> str:
 
 
 def _run_smoke(runner_path: Path, db_path: Path) -> int:
-    """Single-cell A4 smoke: capacity=2¹²=4096 × V-D fixture, used whole."""
+    """Single-cell A4 smoke: capacity=2¹²=4096 × synthetic fixture, used whole."""
     cells_yaml = REPO_ROOT / "experiments" / "a4_cells.yaml"
     cfg = yaml.safe_load(cells_yaml.read_text())
     smoke = cfg["smoke"]

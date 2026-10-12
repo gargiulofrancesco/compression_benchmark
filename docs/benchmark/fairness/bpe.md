@@ -6,10 +6,11 @@ The single, canonical **BPE** row of the paper (named by class, like
 
 ## Implementation: SentencePiece BPE + GPT-2 byte↔unicode bijection
 
-The measured baseline is **Google SentencePiece v0.2.0** in BPE mode
-(`--model_type=bpe`), the production implementation in the GPT-2 / RoBERTa
-lineage — *not* a hand-rolled reimplementation. Phase-0 lock preserved: pure
-C++20 in the measured path, no Python interpreter, no Rust toolchain.
+The measured baseline is **Google SentencePiece v0.2.2** in BPE mode
+(`--model_type=bpe`), a mature C++ implementation — *not* a hand-rolled
+reimplementation. The paper names the row by algorithm class, but its
+training/encoding-time results are implementation-specific. The measured
+path is pure C++20, without a Python or Rust runtime.
 
 SentencePiece on raw bytes is **not** byte-lossless (even with `byte_fallback`
 it decodes lone high-bit non-UTF-8 bytes as U+FFFD). We make it byte-exact the
@@ -23,9 +24,10 @@ round-trips any byte present in the full column.
 
 Settings (see `runners/bpe/bpe_runner.cpp`): `normalization_rule_name=identity`,
 `add_dummy_prefix=false`, `remove_extra_whitespaces=false`,
-`split_by_whitespace=false`, `num_threads=1`, deterministic (no BPE-dropout).
+`split_by_whitespace=false`, `max_sentencepiece_length=16`, `num_threads=1`,
+deterministic (no BPE-dropout).
 
-### History (consolidation,)
+### History
 
 This row supersedes two earlier artifacts, both retired:
 - `bpe-sentencepiece` — SentencePiece on *raw* bytes; quarantined `is_lossless:
@@ -36,20 +38,22 @@ This row supersedes two earlier artifacts, both retired:
 
 ## Train-on-sample (OnPair `sample_fraction` parity)
 
-Training runs on a deterministic prefix of rows totalling `sample_fraction` of the
+Training runs on seed-42-shuffled rows until they total `sample_fraction` of the
 column bytes (headline `sample_fraction=0.15`, matching OnPair); **encoding is
 always over the full column**. This is how BPE is deployed in practice
-(SentencePiece subsamples its training set by default) and restores Cluster-B
-symmetry with OnPair, which also trains on a sample.
+(SentencePiece subsamples its training set by default) and keeps the comparison
+with OnPair symmetric, since OnPair also trains on a sample.
 
-**Training vs. encoding time are reported separately** (`t_train_ns`,
-`t_encode_ns`), per the fairness-audit requirement for baselines with a training
-phase (cf. Re-Pair build time). `T_c` derives from `t_encode_ns` over the full
-column; training time is the appendix build-time row.
+**Compression time is end to end.** `T_c` (`t_compress_ns`) covers the whole
+codec path from raw column to packed tokens: sample preparation, training,
+model load, full-column encoding and packing, as for every other learned codec
+in the roster (FSST, RLZ, Re-Pair, OnPair). The phases are also reported
+separately (`t_train_ns`, `t_encode_ns`, ...), and `t_reuse_compress_ns` is the
+cost of encoding with an already trained model.
 
 ## Correctness (hierarchy)
 
-1. **PRIMARY gate — exhaustive 0x00..0xFF bytewise round-trip fuzzer**
+1. **PRIMARY — exhaustive 0x00..0xFF bytewise round-trip fuzzer**
    (`tests/bpe_roundtrip_test.cpp`): compress → bulk_decode must reproduce the
    input byte-for-byte over every byte value, lone high bytes, NUL, newline, and
    empty rows. This is the load-bearing `is_lossless: true` assertion.
@@ -67,13 +71,13 @@ column; training time is the appendix build-time row.
 
 ## Wire format / bit-tight identity
 
-Unchanged from the consolidated lineup:
 ```
-[M u32][model_bytes[M]][N u32][V u32][T u32]
+[M u32][model_bytes[M]][N u32][V u32][T u32][decoded_bytes u64]
 [tok_offsets[N+1] u32][packed_tokens[ceil(T*B/8)] u8]
 ```
-`model_bytes` is the SentencePiece ModelProto blob (`M`). `B = ceil(log2(V))` per
-column (shared `runners/core/bitpack`).
+`model_bytes` is the SentencePiece ModelProto blob (`M`). `decoded_bytes` is the
+exact decoded payload size, so a bulk decode sizes its output outside the
+timer. `B = ceil(log2(V))` per column (shared `runners/core/bitpack`).
 
 ### Dictionary accounting — DECODE-MINIMAL model
 
@@ -106,26 +110,70 @@ accounted size; `wire_bytes ≥ output_bytes`.
 
 ## Configuration
 
-Headline configs: `vocab_size ∈ {4096, 16384, 65536, 262144}` (V=16384 canonical
-middle = OnPair `bits=14`), `sample_fraction=0.15`, `threads=1`, `mem_cap_gb=64`.
-Single-thread fairness lock (runner rejects `threads != 1`). OOM-as-data
+The runner accepts `vocab_size ∈ {4096, 16384, 65536, 262144}`; the main grid
+runs 16384 (`bpe`, = OnPair `bits=14`) and 65536 (`bpe_v65536`, = OnPair
+`bits=16`), with `sample_fraction=0.15`, `threads=1`, `mem_cap_gb=64`.
+Single-thread fairness (runner rejects `threads != 1`). OOM-as-data
 (`setrlimit(RLIMIT_AS)` + `std::bad_alloc` → `status='oom'`). `prefix_search_mode
-== DecompressThenScan`. Cluster-B symmetry: `bpe` V=16384 ↔ OnPair
+== DecompressThenScan`: each row is decoded up to the needle's length and
+compared. Size-matched pairing: `bpe` V=16384 ↔ OnPair
 `bits=14` (`tests/onpair_cluster_b_symmetry_test.cpp`).
+
+For the paper's BPE row (`bpe_v65536`), `vocab_size=65536` is both the ID-space
+capacity and the realized model size on all six paper columns: `GetPieceSize()` is
+65,536 and the packed stream uses 16-bit IDs. The measured maximum raw piece
+length is 16 bytes in every model, with no >16-byte vocabulary entry or token
+occurrence. This is SentencePiece's default `max_sentencepiece_length=16`, now
+set explicitly in the training arguments. OnPair `bits=16` has the same
+65,536-ID capacity and 16-byte token cap, but its learned dictionary may
+underfill. The comparison is therefore capacity/ID-width matched, not
+necessarily equal in realized entry count.
+
+## Decode architecture: normalized flat kernel vs. SentencePiece API
+
+SentencePiece v0.2.2 supplies vocabulary training and tokenization. The headline
+`bulk_decode` result does **not** time `SentencePieceProcessor::Decode`; as stated
+in the paper, it expands packed IDs through a decode-minimal flat, pre-expanded
+id-to-raw-bytes table, matching OnPair's decode architecture. This intentionally
+isolates tokenization, token frequency/length, and dictionary/ID layout from a
+general-purpose text detokenizer's semantic and protobuf overhead. Consequently:
+
+- describe the headline result as **BPE tokens + normalized flat decoder**, not
+  as SentencePiece detokenization throughput;
+- scope training/encoding results to SentencePiece v0.2.2;
+- never infer an intrinsic BPE decode limit from SentencePiece's public API.
+
+A semantics-preserving diagnostic remaps only the BPE dictionary IDs and packed
+IDs into lexicographic piece order, and the matching OnPair diagnostic remaps
+its dictionary by token frequency
+(`experiments/dictionary_order_diagnostic_driver.py`). At matched ID order the
+two flat decoders run at comparable speed, so learned ID/dictionary locality
+explains most of the difference between BPE in its native order and OnPair;
+lexicographic ordering is a format trade-off that enables OnPair's compressed
+prefix predicates but reduces locality.
+
+For implementation context only, public `Decode(ids, string*)` can be measured
+from already-unpacked IDs, row-wise and in one whole-column call
+(`experiments/bpe_decode_diagnostic_driver.py`; runner variants
+`flat_lexicographic`, `sentencepiece_rows`, `sentencepiece_column`). It is a
+general-purpose detokenizer, far slower than the flat kernel, and is not used
+as an algorithmic BPE baseline.
 
 ## License
 
-SentencePiece v0.2.0 — Apache-2.0 (vendored `third_party/sentencepiece/`).
+SentencePiece v0.2.2 — Apache-2.0 (vendored `third_party/sentencepiece/`).
 minbpe — MIT (vendored `third_party/minbpe/`, test-only).
 
-## Decode codegen erratum (2026-06-12)
+## Decode codegen erratum (identified 2026-06-12; completed 2026-08-15)
 
 **Symptom.** `bulk_decode` throughput for `bpe`/`bpe_v65536` was understated
 roughly 2-2.5x in every store measured before this date (including the numbers
-in the ICDE 2027 submission): 1.7-3.6 GiB/s recorded vs 4.9-7.4 GiB/s after the
-fix. The tell was a flat ~330 Mtok/s per-token rate across columns with very
-different dictionary hotness -- the signature of a fixed instruction cost per
-token, not a memory effect (OnPair varies 750-930 Mtok/s on the same columns).
+in the ICDE 2027 submission). The first correction removed the outlined call
+but retained an unnecessary per-token `len > 16` test and generic fallback,
+even though the actual models all obey SentencePiece's default 16-byte piece
+cap. The complete correction specializes that known-common case once per
+loaded model. Its final measurements supersede both the submitted and
+intermediate corrected numbers.
 
 **Root cause.** `decode_payload`'s per-token `emit` lambda was used twice:
 written inline in the dedicated byte-aligned B==16/B==8 loops AND passed as the
@@ -143,28 +191,24 @@ microbenchmark on identical synthetic data reproduces both regimes: the inlined
 kernel runs at 5.7 GiB/s, a forced-outlined call-per-token variant at 2.5 GiB/s,
 matching the recorded store values.
 
-**Fix.** `BPE_EMIT` macro (the same pattern as the OnPair library's
-`ONPAIR_EMIT_NO_OFF`) used directly in the byte-aligned loops; the lambda
-survives only as the `for_each_token` argument. Verified: no per-token call in
-the rebuilt binary; 7/7 bpe tests pass including the byte-exact round-trip.
-
-**Measured impact** (n=3, controlled environment, same protocol; `onpair`
-control cells on the same columns reproduced their stored medians within 1.6%):
-
-| column                | before (GiB/s) | after (GiB/s) | onpair (GiB/s) |
-|-----------------------|---------------:|--------------:|---------------:|
-| msmarco_queries/query |           2.19 |          4.93 |           5.03 |
-| tpch/c_comment        |           3.56 |          7.36 |           8.28 |
-| tpch/p_name           |           3.27 |          6.63 |           8.65 |
+**Complete fix.** `BPE_EMIT` (the same pattern as OnPair's
+`ONPAIR_EMIT_NO_OFF`) is expanded directly in the byte-aligned loops. A
+one-time dispatch on `PieceDict::max_piece_bytes` selects a compiled
+`<=16`-byte specialization without the impossible per-token branch, while a
+general path remains correct for non-default models containing longer pieces.
+The rebuilt B==16 hot loop has neither a per-token call nor a length branch.
+Byte-exact round-trip remains unchanged.
 
 **Status.** The submitted manuscript reports the pre-fix values; they were
-measured honestly under the uniform timing contract and understate a baseline,
-not the paper's system. The corrected values shrink OnPair's decode margin but
-change no ordering on the re-measured columns. The camera-ready will carry a
-full re-measurement (all six columns) with this fix in place. Only BPE
-`bulk_decode` is affected: compression ratios, compression/training times, and
-random access (`decode_row_into`, a separate hand-rolled loop) are untouched,
-and no other runner shares the pattern.
+measured under the uniform timing contract and understate a baseline, not the
+paper's system. With the complete fix, BPE and OnPair bulk decode are within
+about 20% of each other, with BPE ahead on most columns in its native ID
+order, so OnPair is not faster than every compressed baseline on every column.
+The camera-ready reports the corrected values, produced by the headline grid
+and by `experiments/decode_driver.py` (paired run). Only the custom
+BPE `bulk_decode` adapter was affected; compression ratios and BPE random
+access (`decode_row_into`, a separate loop) are untouched, and no other runner
+shares the pattern.
 
 **Lesson.** When a closure is both used in a hot loop and passed as a callback
 elsewhere, the compiler may outline it and silently route the hot loop through

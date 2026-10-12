@@ -1,6 +1,6 @@
-"""step 3 — A3 driver smoke gate.
+"""A3 driver smoke test.
 
-Invokes `python -m experiments.a3_driver --smoke` against the committed V-D
+Invokes `python -m experiments.a3_driver --smoke` against the committed synthetic
 fixture; asserts a3_results.sqlite contains exactly one row with valid metrics.
 Skipped if the OnPair runner binary is not built (smoke runs `make build` first).
 """

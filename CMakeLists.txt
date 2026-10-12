@@ -27,33 +27,30 @@ add_subdirectory(third_party/libcsd)   # KEPT: `repair` uses libCSD's Re-Pair en
 # (BigRePair was evaluated and dropped: an out-of-core Re-Pair variant not
 # exercised at this benchmark's data sizes; libCSD covers in-memory Re-Pair.)
 
-# SentencePiece v0.2.0 (BPE). Options set before
-# add_subdirectory; upstream CMakeLists.txt invoked as-is.
-# BPE adjusted decision #1: locks card said
-# SPM_USE_BUILTIN_PROTOBUF=ON (v0.1.x option); v0.2.0 renamed to
-# SPM_PROTOBUF_PROVIDER="internal" + SPM_ABSL_PROVIDER="internal".
+# SentencePiece v0.2.2 (BPE). Options set before add_subdirectory; upstream
+# CMakeLists.txt invoked as-is. Protobuf-lite is the copy bundled in the
+# vendored tree. Abseil is not bundled: SentencePiece's own CMake fetches the
+# pinned abseil-cpp release into third_party/sentencepiece/third_party/ at
+# configure time (SPM_ABSL_PROVIDER="module"); both paths are git-ignored.
 set(SPM_ENABLE_SHARED            OFF        CACHE BOOL   "" FORCE)
 set(SPM_BUILD_TEST               OFF        CACHE BOOL   "" FORCE)
 set(SPM_ENABLE_TCMALLOC          OFF        CACHE BOOL   "" FORCE)
-set(SPM_ENABLE_TENSORFLOW_SHARED OFF        CACHE BOOL   "" FORCE)
 set(SPM_PROTOBUF_PROVIDER        "internal" CACHE STRING "" FORCE)
-set(SPM_ABSL_PROVIDER            "internal" CACHE STRING "" FORCE)
-set(SPM_NO_THREADLOCAL           OFF        CACHE BOOL   "" FORCE)
+set(SPM_ABSL_PROVIDER            "module"   CACHE STRING "" FORCE)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5        CACHE STRING "" FORCE)
 add_subdirectory(third_party/sentencepiece EXCLUDE_FROM_ALL)
 
 # libdivsufsort 2.0.1 (RLZ; MIT). Onpair-bench thin shim
 # bypasses upstream's cmake_minimum_required(VERSION 2.4).
-# adjusted-decision sole
-# vendored dep for RLZ (skuruppu/RLZ + libcds skipped; pure C++ reimpl at
-# runners/rlz/rlz_core.{h,cpp}). See third_party/libdivsufsort/PROVENANCE.txt
-# for full rationale.
+# It is the sole vendored dep for RLZ (skuruppu/RLZ + libcds are not used;
+# pure C++ reimpl at runners/rlz/rlz_core.{h,cpp}). See
+# third_party/libdivsufsort/PROVENANCE.txt for full rationale.
 add_subdirectory(third_party/libdivsufsort)
 
-# OnPair — (last). Consumed via FetchContent + commit SHA
-# per (NOT vendored under third_party/; the library is the
-# artefact under measurement). See external/onpair_cpp.cmake + top-level
-# external/onpair_cpp.cmake for the SHA pin and license.
+# OnPair. Consumed via FetchContent + commit SHA
+# (NOT vendored under third_party/; the library is the
+# artefact under measurement). See external/onpair_cpp.cmake
+# for the SHA pin and license.
 include(${CMAKE_SOURCE_DIR}/external/onpair_cpp.cmake)
 
 add_subdirectory(runners/core)
@@ -66,6 +63,7 @@ add_subdirectory(runners/repair)
 add_subdirectory(runners/bpe)
 add_subdirectory(runners/rlz)
 add_subdirectory(runners/onpair)
+add_subdirectory(experiments)
 
 enable_testing()
 add_subdirectory(tests)

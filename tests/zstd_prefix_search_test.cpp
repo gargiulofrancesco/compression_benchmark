@@ -1,4 +1,4 @@
-// G6 self-consistency: zstd's prefix_search hit-set must match the canonical
+// Prefix-search check: zstd's prefix_search hit-set must match the canonical
 // scan_prefix output bytewise on the 16 fixed needles.
 
 #include "runner_protocol.h"

@@ -1,7 +1,7 @@
 """orchestrator CLI.
 
 End-to-end: synth → runner subprocess → NDJSON envelopes → SQLite + CSV →
-round-trip + G6 self-consistency verification → stats aggregation.
+round-trip + prefix-search hit-set verification → stats aggregation.
 """
 from __future__ import annotations
 import argparse
@@ -106,12 +106,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _materialise_input_column(cell: dict, input_col: Path, needles: list[bytes]) -> None:
-    """step 1 — route on cell["dataset_kind"] (default synthetic_simple
-    preserves all 13 existing smoke cells).
+    """Route on cell["dataset_kind"] (default synthetic_simple, which the
+    smoke cells use).
 
-    - synthetic_simple (default): existing Gaussian generator on alphabet of
-      letters+digits+symbols, sprinkled with G6 needles for prefix_search hits.
-    - synthetic_vd: parametric V-D Markov generator over `L × |Σ| × ρ`.
+    - synthetic_simple (default): Gaussian-length generator on an alphabet of
+      letters+digits+symbols, sprinkled with the needles for prefix_search hits.
+    - synthetic_vd: parametric generator over `L × |Σ| × ρ`.
     - real: copy a previously-materialised column from disk (path under
       datasets/materialized/ or testdata/datasets/).
     """
@@ -179,7 +179,7 @@ def _drive_runner(runner_path: Path, cell: dict, needles: list[bytes],
     input_col = workdir / f"{cell['cell_id']}.in.col"
     _materialise_input_column(cell, input_col, needles)
     ref_input_bytes = input_col.read_bytes()
-    col = read_column(str(input_col))  # for G6 expected hit-set + random_decode oracle
+    col = read_column(str(input_col))  # expected prefix-search hit-set + random_decode oracle
 
     flags_sha = env_dict["baseline_build_flags_sha"]
     machine_id = env_dict["machine_id"]
@@ -200,14 +200,14 @@ def _drive_runner(runner_path: Path, cell: dict, needles: list[bytes],
     rows: list[ResultRow] = []
     g6_passed = False
     try:
-        # Handshake (G7 gate)
+        # Handshake (declared-mode check)
         hello = _recv(proc)
         if hello.get("type") != "hello":
             raise RuntimeError(f"expected hello, got {hello}")
-        # Variant-multiplexed runners (e.g., libcsd_pfc_htfc) report a single
-        # hello.name but serve multiple cell-level baselines via config_json
-        # variant. Record identity uses cell["baseline"] (the variant-specific
-        # name) so §8 plots can distinguish PFC vs HTFC rows.
+        # Variant-multiplexed runners (e.g., zstd serving zstd_l1 / zstd_l9)
+        # report a single hello.name but serve multiple cell-level baselines via
+        # config_json. Record identity uses cell["baseline"] (the variant-specific
+        # name) so the tables and plots can tell the variants apart.
         check_runner_name(cell["baseline"], hello["name"])
         baseline = cell["baseline"]
         psm = hello["prefix_search_mode"]
@@ -215,7 +215,7 @@ def _drive_runner(runner_path: Path, cell: dict, needles: list[bytes],
         if hello.get("baseline_build_flags_sha") != flags_sha:
             raise RuntimeError(f"flags_sha mismatch: runner={hello.get('baseline_build_flags_sha')} expected={flags_sha}")
 
-        needle = needles[0].decode()  # G6: first needle drives the prefix_search sample loop
+        needle = needles[0].decode()  # first needle drives the prefix_search sample loop
         # Path used by bulk_decode / random_decode / prefix_search as input (the compressed payload).
         compressed_path = workdir / f"{cell['cell_id']}.compress.s0.out"
 
@@ -292,12 +292,31 @@ def _drive_runner(runner_path: Path, cell: dict, needles: list[bytes],
 
 
 def _verify_g6(col: Column, needle: bytes, hits_path: Path) -> bool:
-    """G6 self-consistency: runner's hit list == Python reference scan."""
+    """Prefix-search check: runner's hit list == Python reference scan."""
     raw = hits_path.read_bytes()
     n_hits = int.from_bytes(raw[:4], "little")
     runner_hits = [int.from_bytes(raw[4 + 4 * i: 8 + 4 * i], "little") for i in range(n_hits)]
     ref = [i for i in range(col.num_rows) if col.at(i).startswith(needle)]
     return runner_hits == ref
+
+
+def check_setup(cells_doc: dict, env) -> None:
+    """The paper took its timings with the performance governor and turbo off.
+    A cell doc that declares `require_controlled_env` (the main grid and the
+    sweeps do; the smoke docs do not) is meant to be measured that way. On a
+    machine set up otherwise the run goes ahead, and every row is labelled
+    `dev-only`: ratios are exact, timings are those of the machine as it is.
+    STRICT_ENV=1 refuses instead."""
+    if not cells_doc.get("require_controlled_env", False) or env.env_controlled:
+        return
+    if os.environ.get("STRICT_ENV") == "1":
+        raise SystemExit(
+            f"orchestrate: STRICT_ENV=1 and this machine is not set up as for the "
+            f"paper: {env.env_control_reason}. `./reproduce.sh env` prints the "
+            f"commands that set it.")
+    print(f"orchestrate: not the paper's setup ({env.env_control_reason}); the run "
+          "goes ahead and its rows are labelled dev-only: ratios are exact, timings "
+          "are those of this machine as it is")
 
 
 def main() -> int:
@@ -317,7 +336,7 @@ def main() -> int:
 
     cells_doc = yaml.safe_load(a.cells.read_text())
     n_samples = int(cells_doc.get("n_samples", 5))
-    # Statistical-robustness floor (W-5): a cell doc may declare `min_samples`
+    # Statistical-robustness floor: a cell doc may declare `min_samples`
     # (the headline grid stamps 11). Refuse to run — and thus to record — if the
     # repetition count has drifted below it, so an under-sampled run can never
     # masquerade as a headline measurement. Smoke docs omit min_samples (floor 0).
@@ -352,17 +371,7 @@ def main() -> int:
           f"avx512f={env.avx512f} fsst_simd_path={env.fsst_simd_path} "
           f"flags_sha={env.build_flags_sha[:12]}...")
 
-    # Throughput-path environment gate (W-6). A cell doc may declare
-    # `require_controlled_env` (the headline grid stamps it). Refuse to run — and
-    # thus to record — T_c/T_d under an uncontrolled frequency/thermal environment,
-    # symmetric with the rdtscp L_ra path. Machine-AGNOSTIC: any box with the
-    # performance governor + turbo off qualifies, so reproduction elsewhere is fine.
-    # Smoke/dev docs omit the flag and are exempt.
-    if bool(cells_doc.get("require_controlled_env", False)) and not env.env_controlled:
-        raise SystemExit(
-            f"orchestrate: refusing to record a headline run under an uncontrolled "
-            f"environment — {env.env_control_reason}. Set the performance governor and "
-            f"disable turbo on the measurement box, or run a non-headline grid.")
+    check_setup(cells_doc, env)
 
     run_id = uuid.uuid4().hex
     workdir = a.workdir or Path(tempfile.mkdtemp(prefix="onpair_bench_smoke_"))
@@ -423,7 +432,7 @@ def main() -> int:
         for stale in workdir.glob(f"{cell['cell_id']}.*"):
             stale.unlink(missing_ok=True)
         g6_all = g6_all and g6
-        # G6 gate result is itself a metric row
+        # The prefix-search check result is itself a metric row (g6_passed)
         all_rows.append(ResultRow(
             run_id=run_id, cell_id=cell["cell_id"], baseline=cell["baseline"],
             op="prefix_search", metric_name="g6_passed",
@@ -437,7 +446,7 @@ def main() -> int:
         ))
         insert_rows(conn, all_rows[-1:])
 
-    # Rows were inserted per cell (durability patch); all_rows is
+    # Rows were inserted per cell; all_rows is
     # retained only for the summary count.
     print(f"orchestrate: inserted {len(all_rows)} rows into results")
     if lossy_cells:
@@ -456,7 +465,7 @@ def main() -> int:
         print(f"orchestrate: wrote manifest to {a.manifest} sha={m['manifest_sha'][:12]}...")
 
     if not g6_all:
-        print("orchestrate: G6 FAILED", file=sys.stderr)
+        print("orchestrate: prefix-search check FAILED (g6_passed)", file=sys.stderr)
         return 1
     return 0
 

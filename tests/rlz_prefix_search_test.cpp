@@ -1,4 +1,4 @@
-// G6 self-consistency: RLZ prefix_search hit-set must match scan_prefix
+// Prefix-search check: RLZ prefix_search hit-set must match scan_prefix
 // bytewise on 16 fixed needles at R%=5%.
 
 #include "rlz_runner.h"

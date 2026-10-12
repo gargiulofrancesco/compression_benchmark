@@ -63,15 +63,15 @@ int main(int argc, char *argv[]) {
   if (!absl::GetFlag(FLAGS_model).empty()) {
     ModelProto model_proto;
     SentencePieceProcessor sp;
-    CHECK_OK(sp.Load(absl::GetFlag(FLAGS_model)));
+    QCHECK_OK(sp.Load(absl::GetFlag(FLAGS_model)));
     spec = sp.model_proto().normalizer_spec();
   } else if (!absl::GetFlag(FLAGS_normalization_rule_tsv).empty()) {
     spec.set_normalization_rule_tsv(
         absl::GetFlag(FLAGS_normalization_rule_tsv));
-    CHECK_OK(SentencePieceTrainer::PopulateNormalizerSpec(&spec));
+    QCHECK_OK(SentencePieceTrainer::PopulateNormalizerSpec(&spec));
   } else if (!absl::GetFlag(FLAGS_normalization_rule_name).empty()) {
     spec.set_name(absl::GetFlag(FLAGS_normalization_rule_name));
-    CHECK_OK(SentencePieceTrainer::PopulateNormalizerSpec(&spec));
+    QCHECK_OK(SentencePieceTrainer::PopulateNormalizerSpec(&spec));
   } else {
     LOG(FATAL) << "Sets --model, normalization_rule_tsv, or "
                   "normalization_rule_name flag.";
@@ -87,14 +87,14 @@ int main(int argc, char *argv[]) {
 
   if (absl::GetFlag(FLAGS_decompile)) {
     Builder::CharsMap chars_map;
-    CHECK_OK(
+    QCHECK_OK(
         Builder::DecompileCharsMap(spec.precompiled_charsmap(), &chars_map));
-    CHECK_OK(Builder::SaveCharsMap(absl::GetFlag(FLAGS_output), chars_map));
+    QCHECK_OK(Builder::SaveCharsMap(absl::GetFlag(FLAGS_output), chars_map));
   } else {
     const Normalizer normalizer(spec);
     auto output =
         sentencepiece::filesystem::NewWritableFile(absl::GetFlag(FLAGS_output));
-    CHECK_OK(output->status());
+    QCHECK_OK(output->status());
 
     if (rest_args.empty()) {
       rest_args.push_back("");  // empty means that read from stdin.
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
     std::string line;
     for (const auto &filename : rest_args) {
       auto input = sentencepiece::filesystem::NewReadableFile(filename);
-      CHECK_OK(input->status());
+      QCHECK_OK(input->status());
       while (input->ReadLine(&line)) {
         output->WriteLine(normalizer.Normalize(line));
       }

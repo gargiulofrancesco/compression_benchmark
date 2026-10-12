@@ -1,4 +1,4 @@
-// RLZ refused-env smoke gate. First refused-env participant in the lineup.
+// RLZ refused-env test.
 // When column_size * R% < block_size (16 KB), K=0 and sampling can't
 // produce a block. Runner must emit status='refused-env' cleanly with
 // non-empty notes; no crash, no SIGKILL.

@@ -13,9 +13,9 @@ from orchestrator.column_io import Column, write_column
 def _urlopen_retry(url: str, *, retries: int = 5, backoff: float = 3.0):
     """Open `url` with a descriptive UA and retry transient failures.
 
-    dblp.org / wikimedia mirrors intermittently 503 / throttle large fetches; a
-    bare urlopen aborts the whole pipeline. Retry on 5xx + 429 + URLError with
-    exponential backoff. Some CDNs (datasets.clickhouse.com via Cloudflare) also
+    Dataset mirrors (dblp.org, for one) intermittently 503 / throttle large
+    fetches; a bare urlopen aborts the whole pipeline. Retry on 5xx + 429 +
+    URLError with exponential backoff. Some CDNs also
     403 the default "Python-urllib/x.y" UA, so send our own (verified 200,
     honest, non-impersonating, accepted by all dataset hosts)."""
     req = urllib.request.Request(
@@ -50,10 +50,10 @@ def sha256_of(path: Path, chunk: int = 1 << 20) -> str:
 
 
 def download_if_missing(url: str, target: Path, *, expected_sha256: str | None = None) -> Path:
-    """Idempotent: skip if target exists. Verify SHA-256 when given (and not the
-    TBD-AT-INTEGRATION placeholder); raise on mismatch.
+    """Idempotent: skip if target exists. Verify SHA-256 when given (and not one
+    of the non-digest markers below); raise on mismatch.
 
-    Network IO; only invoked on measurement rigs (NOT on the dev box / smoke).
+    Network IO; never invoked by smoke.
     """
     target.parent.mkdir(parents=True, exist_ok=True)
     if not target.exists():
@@ -68,7 +68,12 @@ def download_if_missing(url: str, target: Path, *, expected_sha256: str | None =
                     break
                 out.write(chunk)
         part.rename(target)
-    if expected_sha256 and expected_sha256 != "TBD-AT-INTEGRATION":
+    # Several rolling/locally generated sources intentionally carry a manifest
+    # marker instead of a digest. Final materialized-column hashes remain pinned.
+    non_digests = {"TBD-AT-INTEGRATION", "recorded-at-fetch", "rolling", "n/a"}
+    if expected_sha256 and expected_sha256 not in non_digests:
+        if len(expected_sha256) != 64:
+            raise ValueError(f"invalid expected SHA-256 marker/digest: {expected_sha256!r}")
         observed = sha256_of(target)
         if observed != expected_sha256:
             raise IOError(
@@ -94,7 +99,7 @@ def write_rows(out_path: Path, rows: list[bytes]) -> Path:
 def cardinality(col_path: Path) -> tuple[int, int]:
     """(N, U) = total rows and distinct rows of a materialised .col.
 
-    The high-cardinality scope is REPORTED (Table 1 / U-N), not gated: this
+    The high-cardinality scope is REPORTED (Table I, Uniq. %), not gated: this
     statistic feeds the dataset table and a sanity check that headline columns
     are genuinely high-cardinality. Reads the [N][total][offsets][bytes] format.
     """

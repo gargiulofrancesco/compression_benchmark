@@ -94,9 +94,9 @@ void unpack_triples(const std::vector<uint8_t>& packed,
 
     // FAIRNESS / speed: a whole triple is <= 64 bits, so each one is read with a
     // SINGLE 64-bit load (+ at most one straddle byte) and three mask/shifts —
-    // not the byte-by-byte accumulator refill the old per-field take_field did
+    // not a byte-by-byte accumulator refill per field
     // (3 refill loops per triple). This is the mixed-width analogue of the
-    // batched extract16 in bitpack.h, so RLZ's bit-unpacking is no longer slower
+    // batched extract16 in bitpack.h, so RLZ's bit-unpacking is not slower
     // than OnPair's purely because of this shared utility.
     auto field_mask = [](uint32_t bits) -> uint64_t {
         return bits == 0 ? 0 : (bits == 32 ? ~uint64_t{0} : ((uint64_t{1} << bits) - 1));

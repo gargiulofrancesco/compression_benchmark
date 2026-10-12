@@ -9,6 +9,7 @@ Usage:
   PYTHONPATH=. .venv/bin/python -m experiments.rlz_sweep_driver
 """
 from __future__ import annotations
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,11 @@ GRID = {
 
 
 def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--out", type=Path, default=REPO_ROOT / "build",
+                    help="directory for the result store (default: build)")
+    out = ap.parse_args().out
+    out.mkdir(parents=True, exist_ok=True)
     build = REPO_ROOT / "build"
     cells = []
     for ds, sizes in GRID.items():
@@ -43,7 +49,7 @@ def main() -> int:
             })
     doc = {"n_samples": 3, "min_samples": 3, "mem_cap_gb": 64,
            "require_controlled_env": True, "cells": cells}
-    cells_path = build / "rlz_sweep2_cells.yaml"
+    cells_path = out / "rlz_sweep2_cells.yaml"
     yaml.safe_dump(doc, open(cells_path, "w"), sort_keys=False)
     print(f"rlz_sweep_driver: {len(cells)} cells -> {cells_path}")
     return subprocess.call([
@@ -51,9 +57,9 @@ def main() -> int:
         "--build-root", str(build), "--cells", str(cells_path),
         "--modes", str(REPO_ROOT / "experiments/baseline_modes.yaml"),
         "--needles", str(REPO_ROOT / "testdata/g6_needles.txt"),
-        "--db", str(build / "rlz_sweep2_results.sqlite"),
-        "--csv", str(build / "rlz_sweep2_results.csv"),
-        "--workdir", str(build / "rlz_sweep2_workdir"),
+        "--db", str(out / "rlz_sweep2_results.sqlite"),
+        "--csv", str(out / "rlz_sweep2_results.csv"),
+        "--workdir", str(out / "rlz_sweep2_workdir"),
     ], cwd=str(REPO_ROOT))
 
 

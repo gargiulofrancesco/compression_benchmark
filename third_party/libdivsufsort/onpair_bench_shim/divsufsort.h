@@ -1,4 +1,4 @@
-/* Hand-rolled divsufsort.h shim for onpair_bench (Phase 4 RLZ Step 1).
+/* Hand-rolled divsufsort.h shim for the benchmark's RLZ baseline.
  * 32-bit suffix-array variant. Replaces the upstream divsufsort.h.cmake
  * configure_file step. Targets POSIX (darwin/linux); BUILD_SHARED_LIBS=OFF
  * so DIVSUFSORT_API expands empty.

@@ -1,13 +1,13 @@
 // Lz4Runner implementation. See lz4_runner.h for class shape.
-// Wire format on disk (two-level layout per ):
+// Wire format on disk (two-level layout, as zstd):
 //   [N u32][B u32][block_offsets[B+1] u32][block_first_string[B+1] u32]
-//   [block_raw_sizes[B] u32][compressed_blocks[total] u8]
-// Each block uncompressed payload =
-//   [k u32][within_offsets[k+1] u32][strings[total_block_bytes] u8]
+//   [block_raw_sizes[B] u32][within_offsets[N+B] u32][compressed_blocks[total] u8]
+// Each block's uncompressed payload is its strings concatenated; the k+1 local
+// row offsets of every block are stored uncompressed in within_offsets.
 // block_raw_sizes[b] is the uncompressed byte length of block b: LZ4 raw frames
 // (unlike zstd) do not self-describe their decompressed size, so we store it to
 // size the decode buffer exactly — the analogue of ZSTD_getFrameContentSize.
-// Boundary cost billed PRE-COMPRESSION (boundaries-conservative; never over-credits LZ4).
+// Both arrays are billed to boundaries_bytes.
 
 #include "lz4_runner.h"
 #include "decompress_then_scan.h"
@@ -86,7 +86,7 @@ BlockPlan plan_blocks(const Column& col, uint32_t block_budget_bytes) {
     return plan;
 }
 
-// step 6 (A5): block boundaries every `block_strings` rows. Mirrors
+// A5 sweep: block boundaries every `block_strings` rows. Mirrors
 // plan_blocks' [0, ..., N] shape but partitions by string count, not bytes.
 BlockPlan plan_blocks_by_strings(const Column& col, uint32_t block_strings) {
     BlockPlan plan;
@@ -99,7 +99,7 @@ BlockPlan plan_blocks_by_strings(const Column& col, uint32_t block_strings) {
 }
 
 // Build one block's PAYLOAD (strings concatenated, no header) and append its k+1
-// LOCAL row offsets (0..payload_size) to woff. Offsets now travel uncompressed on
+// LOCAL row offsets (0..payload_size) to woff. Offsets travel uncompressed on
 // the wire so the frame is payload-only and decode is single-pass. See zstd_runner.
 void build_block_payload(const Column& col, uint32_t lo, uint32_t hi,
                          std::vector<uint8_t>& payload,
@@ -176,7 +176,7 @@ void lz4_prealloc(const Lz4Wire& w, Column& out) {
 // PAYLOAD-ONLY decode into the PRE-ALLOCATED out.bytes — the timed codec region.
 // Each frame IS the block's payload, so LZ4_decompress_safe writes straight into the
 // column at the running payload offset: ONE pass, no scratch, no second payload-
-// concat copy (that copy was a ~27% measurement artifact onpair/bpe/rlz don't pay).
+// concat copy (such a copy would cost ~27% that onpair/bpe/rlz don't pay).
 void decode_all_payload(const Lz4Wire& w, Column& out) {
     uint64_t cum = 0;
     for (uint32_t b = 0; b < w.B; ++b) {
@@ -259,7 +259,7 @@ OpResult Lz4Runner::compress(const std::string& in_path,
     const uint32_t N = static_cast<uint32_t>(col.num_rows());
 
     // Lazy-size the per-tier state buffers once. One-time alloc — not what
-    // the paper measures (per LZ4 card timing rule).
+    // the paper measures.
     if (cfg.tier == Lz4Config::Tier::Fast) {
         size_t need = static_cast<size_t>(LZ4_sizeofState());
         if (state_.size() < need) state_.resize(need);
@@ -431,9 +431,9 @@ OpResult Lz4Runner::prefix_search(const std::string& in_path,
     return r;
 }
 
-// step 6 (A5). Times n_samples uniform random accesses; each pays the
-// full cost of decoding the enclosing block (so L_ra grows with block size —
-// the degrading-baseline curve of figure A5). No file I/O inside the timed
+// Times n_samples random accesses; each pays the
+// full cost of decoding the enclosing block (so L_ra grows with block size,
+// as the A5 block-size sweep shows). No file I/O inside the timed
 // loop. config_json: n_samples (default 1e6), seed (42), warmup (1 → one
 // warm pre-pass decode_all before timing; 0 → cold-ish, no in-process warmup).
 OpResult Lz4Runner::ra_latency(const std::string& in_path,
@@ -464,9 +464,9 @@ OpResult Lz4Runner::ra_latency(const std::string& in_path,
         const std::vector<uint64_t> indices =
             generate_query_indices(qspec, n_samples, w.N, seed);
 
-        // Batched timing (latency_stats.h); identical primitive to zstd. Each
-        // access decodes the enclosing block, locates the row, returns a payload
-        // byte (anti-DCE via the accumulated, barrier'd value); K auto-tuned.
+        // Per-access rdtscp timing (ra_timer_tsc.h); identical primitive to zstd.
+        // Each access decodes the enclosing block, locates the row, returns a
+        // payload byte (anti-DCE via the accumulated, barrier'd value).
         std::vector<uint8_t> raw;
         RaLatencyResult m;
         std::string ra_reason;

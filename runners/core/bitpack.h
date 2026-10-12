@@ -1,7 +1,8 @@
 #pragma once
 // Uniform-width bit-packed token-ID stream.
 // LSB-first within each byte; tokens written in increasing position order.
-// Consumers: the BPE runner (token IDs) — rlz uses the sibling bitpack_mixed.
+// Consumers: the BPE runner (token IDs) and the repair runner (grammar
+// symbols) — rlz uses the sibling bitpack_mixed.
 // NOTE: OnPair does NOT use this archive; it bit-packs/unpacks via its own
 // library (BitWriter + decode_all<Bits>/extract16). For FAIRNESS — so a baseline
 // that uses this shared utility isn't slower than OnPair purely because of our
@@ -53,7 +54,7 @@ void unpack_uniform(const std::vector<uint8_t>& packed,
 // no per-token refill branch). The scalar unpack_uniform() above is far slower,
 // so any lineup baseline that reused it would lose decode throughput purely
 // because of OUR utility — not the codec. This primitive ports OnPair's technique
-// into the shared archive so shared-bitpack consumers (BPE; rlz-uniform) decode
+// into the shared archive so its consumers (BPE) decode
 // at OnPair-equivalent bit-level speed.
 //
 // It calls `emit(uint32_t id)` for every token in stream order WITHOUT

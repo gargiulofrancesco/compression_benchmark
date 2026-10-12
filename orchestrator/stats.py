@@ -4,6 +4,7 @@ Aggregates `results` rows into `results_agg` per (run_id, cell_id, baseline, op,
 """
 from __future__ import annotations
 import argparse
+import warnings
 import math
 import sqlite3
 import statistics
@@ -34,7 +35,12 @@ def mean_ci95(values: list[float]) -> tuple[float, float, float]:
     sd = statistics.stdev(values)
     se = sd / math.sqrt(n)
     if _HAVE_SCIPY:
-        lo, hi = _t.interval(0.95, df=n - 1, loc=mean, scale=se)
+        # A metric that does not vary (a size, for instance) has se == 0, for
+        # which scipy returns NaN bounds with a RuntimeWarning; keep the NaN,
+        # drop the noise.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            lo, hi = _t.interval(0.95, df=n - 1, loc=mean, scale=se)
     else:
         # Approximation: t ≈ 1.96 for df ≥ 30; for small n use a table.
         t_val = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571,
@@ -64,8 +70,8 @@ def aggregate(conn: sqlite3.Connection) -> int:
             ORDER BY sample_idx ASC
         """, (run_id, cell_id, baseline, op, metric_name))
         # dev-only rows carry valid metric values but a "not citable" annotation.
-        # We aggregate them so plots render on dev hardware; the agg row inherits
-        # the dev-only label so downstream scripts can filter for publication.
+        # We aggregate them so plots render on a machine without clock control;
+        # the agg row inherits the dev-only label so downstream scripts can filter.
         usable = {"ok", "dev-only"}
         ok_values: list[float] = []
         statuses: list[str] = []

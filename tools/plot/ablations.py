@@ -1,11 +1,11 @@
-"""— ablation figures/tables: F4 (A1/A3/A7), A2, A4, A5, A6, F5, T3.
+"""Diagnostic ablation figures/tables: F4 (A1/A3/A7), A2, A4, A5, A6, F5, T3.
+The names are these renderers' own output files, not the paper's numbering.
 
 Each renderer reads its own ablation store (a*_results.sqlite) and returns the
 files it wrote, or [] if the store / its rows are absent — so render_all runs
 after any partial set of `make a1..a7` runs. L_ra figures (A5/A6/F5) consider
-only status='ok' rows: on a non-x86 box every L_ra cell is 'refused-env' (the
-rdtscp path is rig-only), so those figures correctly produce nothing until the
-rig run.
+only status='ok' rows: on a non-x86 machine every L_ra cell is 'refused-env' (the
+rdtscp path needs x86-64), so those figures produce nothing there.
 """
 from __future__ import annotations
 import statistics
@@ -224,7 +224,7 @@ def render_f4(a1_db: Path, a3_db: Path, a7_db: Path, out_dir: Path) -> list[Path
 # ──────────────────────── T3 (ablation summary cross-tab) ───────────────────
 def render_t3(a2_db: Path, a4_db: Path, a5_db: Path, a7_db: Path,
               out_dir: Path) -> list[Path]:
-    """T3 — per-column summary of A2 + A4 + A5 + A7 (plan T3 cross-tab). Pulls
+    """T3 — per-column summary of A2 + A4 + A5 + A7. Pulls
     one headline number from each ablation per column; '—' where a store/row is
     absent so the table renders on partial runs."""
     def col_map(db, table, sql):

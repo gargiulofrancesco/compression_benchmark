@@ -1,6 +1,7 @@
 add_library(bpe_runner_lib STATIC bpe_runner.cpp)
 target_include_directories(bpe_runner_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/third_party/sentencepiece
     ${CMAKE_SOURCE_DIR}/third_party/sentencepiece/src
     ${CMAKE_SOURCE_DIR}/third_party/sentencepiece/third_party)
 target_link_libraries(bpe_runner_lib PUBLIC

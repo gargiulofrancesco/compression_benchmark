@@ -36,9 +36,8 @@ int suffix_compare(const uint8_t* row, size_t row_remaining,
 // The longest-match candidate is at the lex-bracket of the search; we then
 // take the lcp with row at one of the bracketing SA entries.
 //
-// This is O(log R_len · max_match_len) per position — sufficient for smoke
-// + small-to-medium columns. optimisation candidate
-// (precompute LCP / use sa_search-style augmented search) but not required
+// This is O(log R_len · max_match_len) per position. Precomputing LCP or an
+// sa_search-style augmented search would be faster; neither is required
 // for correctness.
 std::pair<uint32_t, uint32_t>
 longest_match(const uint8_t* row, size_t row_len,
@@ -104,8 +103,8 @@ uint32_t compute_K(uint64_t L, double reference_size_fraction,
     if (static_cast<double>(k) < raw) k += 1;  // ceil
     // Also clamp K so K*block_size doesn't exceed L (sampling without
     // wrap-around requires offsets in [0, L - block_size]).
-    // For a reasonable headline (R% <= 25%, L large), this is always safe;
-    // for tiny corpora the refused-env gate fires earlier in compute_K
+    // For R% <= 25% and a large L this is always safe;
+    // for tiny corpora the refused-env check fires earlier in compute_K
     // (L < block_size). Belt-and-braces clamp:
     const uint64_t max_K = L / block_size;
     if (k > max_K) k = max_K;

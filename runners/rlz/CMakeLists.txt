@@ -1,4 +1,4 @@
-# — RLZ runner.
+# RLZ runner.
 # Pure C++ Hoobin/Puglisi/Zobel 2011 RLZ + libdivsufsort 2.0.1 (MIT).
 
 add_library(rlz_runner_lib STATIC

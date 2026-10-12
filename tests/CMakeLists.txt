@@ -64,7 +64,7 @@ add_test(NAME repair_roundtrip COMMAND repair_roundtrip_test)
 
 # bigrepair tests removed (BigRePair baseline dropped).
 
-# BPE — 8 new tests.
+# BPE tests.
 add_executable(bitpack_unit_test bitpack_unit_test.cpp)
 target_link_libraries(bitpack_unit_test PRIVATE runner_core)
 add_test(NAME bitpack_unit COMMAND bitpack_unit_test)
@@ -145,10 +145,10 @@ add_executable(rlz_seed_determinism_test rlz_seed_determinism_test.cpp)
 target_link_libraries(rlz_seed_determinism_test PRIVATE rlz_runner_lib)
 add_test(NAME rlz_seed_determinism COMMAND rlz_seed_determinism_test)
 
-# — OnPair (last; closes lineup).
+# OnPair tests.
 # Consumed via FetchContent from public github.com/gargiulofrancesco/onpair_cpp
-# at SHA f8ecc64f per. See external/onpair_cpp.cmake,
-# external/onpair_cpp.cmake, and docs/benchmark/fairness/onpair.md.
+# at SHA f8ecc64f. See external/onpair_cpp.cmake
+# and docs/benchmark/fairness/onpair.md.
 
 add_executable(onpair_roundtrip_test onpair_roundtrip_test.cpp)
 target_link_libraries(onpair_roundtrip_test PRIVATE onpair_runner_lib)
@@ -197,28 +197,28 @@ add_executable(onpair_scope_fence_test onpair_scope_fence_test.cpp)
 target_link_libraries(onpair_scope_fence_test PRIVATE onpair_runner_lib)
 add_test(NAME onpair_scope_fence COMMAND onpair_scope_fence_test)
 
-# step 2 — A1 ablation gate. Drives held_out_compress directly on
+# A1 ablation test. Drives held_out_compress directly on
 # a synthesized 200-row column; asserts the bit-tight paired contract.
 add_executable(onpair_held_out_compress_test onpair_held_out_compress_test.cpp)
 target_link_libraries(onpair_held_out_compress_test PRIVATE onpair_runner_lib)
 add_test(NAME onpair_held_out_compress COMMAND onpair_held_out_compress_test)
 
-# step 3 — A3 ablation gate. Drives held_out_compress in single-strategy
+# A3 ablation test. Drives held_out_compress in single-strategy
 # mode (threshold_strategy="dynamic"); asserts the single-block bit-tight contract.
 add_executable(onpair_held_out_single_test onpair_held_out_single_test.cpp)
 target_link_libraries(onpair_held_out_single_test PRIVATE onpair_runner_lib)
 add_test(NAME onpair_held_out_single COMMAND onpair_held_out_single_test)
 
-# step 7 — A6 ablation gate. Unit-tests the shared query-index generator
+# A6 ablation test. Unit-tests the shared query-index generator
 # (runners/core/query_sampler.h) that the A6 ra_latency ops reuse across every
 # baseline: parse, range, determinism, distribution shape, layout bracket.
 add_executable(query_sampler_test query_sampler_test.cpp)
 target_link_libraries(query_sampler_test PRIVATE runner_core)
 add_test(NAME query_sampler COMMAND query_sampler_test)
 
-# step 7 — random-access latency primitive gate. Regression for the
+# Random-access latency primitive test. Regression for the
 # 41ns/0ns timer artifact: batched timing + anti-DCE must yield non-zero,
-# plausible per-access latency; no sub-ns p50. (Fairness-auditor invariant.)
+# plausible per-access latency; no sub-ns p50.
 add_executable(ra_measure_test ra_measure_test.cpp)
 target_link_libraries(ra_measure_test PRIVATE runner_core)
 add_test(NAME ra_measure COMMAND ra_measure_test)

@@ -1,13 +1,11 @@
-// RNG-seed determinism. seed=42 (the locked headline seed) → two
-// compress invocations produce bytewise-identical wire. seed=43 → different
-// wire bytes (different R sampled), but bytewise round-trip is preserved
-// (round-trip correctness is seed-independent).
+// RNG-seed determinism. seed=42 (the only seed the runner accepts) → two
+// compress invocations produce bytewise-identical wire. A different seed
+// samples a different reference R.
 //
-// Note: the runner enforces seed=42 only at the headline; we need to
-// hand-craft cfg with seed=43 to verify the determinism property. But the
-// parse_rlz_config check rejects seed!=42. So we instead verify
+// parse_rlz_config rejects seed!=42, so the second property cannot be
+// checked through the runner. The test therefore verifies
 // determinism by:
-//   (1) running compress twice at seed=42 → identical wire (locked path).
+//   (1) running compress twice at seed=42 → identical wire.
 //   (2) using rlz_core sampling helpers directly to verify that the R
 //       sampling differs at seed=42 vs seed=43, demonstrating the
 //       sampling is genuinely seed-dependent.

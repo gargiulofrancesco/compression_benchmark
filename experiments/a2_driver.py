@@ -1,4 +1,4 @@
-"""step 4 — A2 ablation driver (bit-width sweep).
+"""A2 ablation driver (bit-width sweep; Section VIII-D, Fig. 7).
 
 Drives the OnPair runner via the standard NDJSON protocol. For each
 (dataset, column, bits) cell in experiments/a2_cells.yaml, compresses the FULL
@@ -6,15 +6,15 @@ materialised column at bit-width b (DynamicThreshold{0.15}, seed=42 held
 constant) and then bulk-decodes it; writes one row to build/a2_results.sqlite
 per schema/a2_results.sql.
 
-Unlike A1/A3 this adds NO new runner op and NO upstream OnPair change: A2's
+Unlike A1/A3 this needs NO dedicated runner op and NO upstream OnPair change: A2's
 three quantities (R, T_d, |D|) all have direct headline-op equivalents, so the
 driver reuses the existing `compress` + `bulk_decode` ops and reads their
-dispatch-loop `t_op_ns` as T_c / T_d. This keeps A2's T_d definition identical
-to the §8.2 headline (t_op_ns over the whole op, incl. I/O). See the
+dispatch-loop `t_op_ns` as T_c / T_d. Note that t_op_ns covers the whole op,
+including I/O, unlike the codec-only timers behind Table II. See the
 schema/a2_results.sql header for the full rationale.
 
 Modes:
-  --smoke         : single cell (b=12) against the committed V-D fixture, used
+  --smoke         : single cell (b=12) against the committed synthetic fixture, used
                     whole (no split — A2 is a full-column experiment). <1 sec.
   default         : full grid against datasets/materialized/<dataset>/<col>.col
                     full-column files (produced by `make datasets`).
@@ -228,7 +228,7 @@ def _flags_sha(default: str) -> str:
 
 
 def _run_smoke(runner_path: Path, db_path: Path) -> int:
-    """Single-cell A2 smoke: b=12 × V-D fixture, used whole (no split)."""
+    """Single-cell A2 smoke: b=12 × synthetic fixture, used whole (no split)."""
     cells_yaml = REPO_ROOT / "experiments" / "a2_cells.yaml"
     cfg = yaml.safe_load(cells_yaml.read_text())
     smoke = cfg["smoke"]

@@ -1,5 +1,5 @@
 // Unit tests for runners/core/bitpack_mixed.{h,cpp} — mixed-width
-// packing helper. OnPair may reuse the degenerate uniform-width case.
+// packing helper.
 //
 // Coverage:
 //   (a) Round-trip at heterogeneous widths

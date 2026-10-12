@@ -38,33 +38,30 @@ scope:      Full libCSD library tree at the pinned SHA — all StringDictionary*
                           replaced by per-subdir -I paths in our CMake)
               *.o  (pre-built object files in upstream tree)
 
-phase4_adjusted_decision_1:
-            The Phase 2 RPDAC card §"Build" said "RPDAC-relevant subset
-            of libCSD sources (RPDAC + Repair grammar + DACs + supporting
-            utilities; FMINDEX/XBW/Hash/PFC/HTFC sources excluded from
-            this archive)". This is upstream-architecturally infeasible:
+why_the_whole_tree:
+            Only the Re-Pair grammar builder is used. A subset of the
+            sources (Re-Pair grammar + DACs + supporting utilities, without
+            FMINDEX/XBW/Hash/PFC/HTFC) cannot be built on its own:
             StringDictionary.h itself includes all 11 sibling type headers
             unconditionally at the bottom of the file, and
             StringDictionary.cpp::load() is a switch-on-type-tag factory
             that references every StringDictionary*::load static symbol.
-            Compiling/linking the RPDAC subset alone would fail with
-            missing-symbol errors at every sibling-type switch case.
-            We therefore vendor and link the full libCSD tree as a single
-            libcsd_static.a archive. Other baselines reuse
-            this same archive — no additional vendoring step.
+            Compiling or linking a subset alone fails with missing-symbol
+            errors at every sibling-type switch case. We therefore vendor
+            and link the full libCSD tree as a single libcsd_static.a
+            archive.
 
-phase4_adjusted_decision_2:
-            huff.cpp is C++ (suffix .cpp)
-            speculated. No separate C-language target needed.
+language:
+            huff.cpp is C++ (suffix .cpp); no separate C-language target
+            is needed.
 
-license_escalation:
-            LGPL-2.1 is the FIRST non-permissive upstream in the ICDE 2027
-            benchmark lineup. Static linking is permitted under LGPL §6
-            satisfied by full-source artefact bundle distribution  + relinking capability. The runners/libcsd_rpdac/
-            rpdac_runner binary inherits this LGPL §6 obligation; the
-            orchestrator and the other runner binaries (zstd, lz4, fsst,
-            uncompressed, and other baselines
-            which also links libcsd_static.a) remain unaffected.
+licence_note:
+            LGPL-2.1, the only non-permissive upstream of the benchmark.
+            Static linking is permitted under LGPL section 6, which is
+            satisfied by distributing this repository's full source, so
+            that the binary can be relinked. Only the repair_runner
+            binary, which links libcsd_static.a, inherits the obligation;
+            the orchestrator and the other runner binaries are unaffected.
 
 reproducibility_caveat:
             migumar2/libCSD has no upstream release tags (27 commits on

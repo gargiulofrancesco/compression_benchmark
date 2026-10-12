@@ -1,5 +1,5 @@
 // fsst round-trip: build column → compress → bulk_decode → assert column equality.
-// Three variants per FSST card §"Round-trip self-tests":
+// Three variants (docs/benchmark/fairness/fsst.md, "Round-trip self-tests"):
 //   1. vanilla token-vocabulary column;
 //   2. empty-string stress: a few zero-length rows interleaved;
 //   3. escape-code stress: high-entropy rows that force FSST_ESC emission.

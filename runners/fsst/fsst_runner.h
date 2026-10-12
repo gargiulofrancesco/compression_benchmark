@@ -1,5 +1,5 @@
 #pragma once
-// FsstRunner — native-structure column store see docs/benchmark/fairness/fsst.md.
+// FsstRunner — native-structure column store; see docs/benchmark/fairness/fsst.md.
 // Wire = [H u32][header[H]][N u32][compressed_offsets[N+1] u32]
 //        [decoded_offsets[N+1] u32][codewords[Σ Lc_i] u8].
 // Public class so unit tests can drive it without going through the NDJSON protocol.
@@ -14,12 +14,12 @@ namespace onpair_bench {
 
 struct FsstConfig {
     // FSST has no level dimension. Headline is the single canonical row.
-    // Fields kept for future appendix (fsst12 variant) — not used at headline.
-    std::string variant  = "fsst";          // "fsst" only at headline; "fsst12" reserved
-    std::string training = "full_column";   // full_column only at headline
+    // Any other variant or training value is rejected.
+    std::string variant  = "fsst";          // only "fsst" is accepted
+    std::string training = "full_column";   // only "full_column" is accepted
     // simd=false forces the scalar compression path even on AVX-512 hardware
-    // (roster baseline `fsst_scalar`), so the with/without-AVX-512 headline points
-    // are measured on the same machine. AVX-512 accelerates compression only — the
+    // (baseline `fsst_scalar`), so the with/without-AVX-512 points
+    // can be measured on the same machine. AVX-512 accelerates compression only — the
     // decoder is scalar regardless — so the two points share ratio + decode T_d.
     bool simd = true;
 };
@@ -55,9 +55,9 @@ public:
                            size_t idx,
                            const std::string& out_path,
                            const std::string& config_json) override;
-    // step 7 (A6): random-access latency under a query distribution.
-    // Per-string FSST decode (O(|s_i|), position-independent) → flat under skew;
-    // the per-string-native fairness companion to OnPair in the A6 roster.
+    // Random-access latency under a query distribution.
+    // Per-string FSST decode (O(|s_i|), position-independent);
+    // the second per-string codec, next to OnPair, in the A6 roster.
     OpResult ra_latency(const std::string& in_path,
                         const std::string& out_path,
                         const std::string& config_json) override;

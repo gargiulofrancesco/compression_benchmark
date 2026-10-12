@@ -3,7 +3,7 @@
 Upstream: DBpedia databus short-abstracts (English), N-Triples (.ttl.bz2).
 One row per abstract: the literal object between the first '"' and the trailing
 '"@en'. Capped at `subset.limit` rows (default 1,000,000).
-High-cardinality long text (L_avg ~338 B, ~99.8% distinct): OnPair's sweet spot.
+High-cardinality long text (L_avg ~337 B, ~99.8% distinct).
 """
 from __future__ import annotations
 import bz2

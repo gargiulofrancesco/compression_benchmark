@@ -1,9 +1,9 @@
-"""step 1 — orchestrator dataset_kind routing contract.
+"""Orchestrator dataset_kind routing contract.
 
 The orchestrator's `_materialise_input_column` is the single entry point for
 producing the input column file for a cell. Three paths:
-  - synthetic_simple (default, preserves all 13 existing smoke cells)
-  - synthetic_vd     (parametric V-D Markov)
+  - synthetic_simple (default, used by the smoke cells)
+  - synthetic_vd     (parametric synthetic generator)
   - real             (copy a previously-materialised .col from disk)
 """
 from __future__ import annotations
@@ -81,7 +81,7 @@ def test_unknown_dataset_kind_raises(tmp_path: Path) -> None:
 
 
 def test_synthetic_vd_determinism_through_orchestrator(tmp_path: Path) -> None:
-    """Same V-D cell config → identical column bytes; second run is idempotent."""
+    """Same synthetic_vd cell config → identical column bytes; second run is idempotent."""
     cell = {
         "cell_id": "vd_det", "dataset_kind": "synthetic_vd",
         "L": 8, "sigma": 4, "rho": 0.0, "n_rows": 250, "seed": 123,

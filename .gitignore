@@ -2,7 +2,7 @@
 # comment here is on its own line.
 
 # ── Build & environment (never commit; ~1.3 GB on disk) ─────────────────────
-# build/ = CMake/FetchContent clones (boost/sentencepiece/onpair), binaries,
+# build/ = CMake/FetchContent clones (boost/onpair), binaries,
 # sqlite, smoke workdir, figures.  .venv/ = Python virtualenv (~273 MB).
 build/
 build_*/
@@ -11,7 +11,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# ── Real datasets — materialised on the measurement rig (~6.8 GB) ───────────
+# ── Real datasets — downloaded and materialised locally (~16 GB) ────────────
 # `make datasets` downloads to datasets/raw/ and extracts to
 # datasets/materialized/.  Committed smoke fixtures live under testdata/datasets/
 # (a DIFFERENT path) and are NOT matched by this rule, so they stay tracked.
@@ -38,3 +38,14 @@ results_agg.csv
 # ── Misc ────────────────────────────────────────────────────────────────────
 *.tmp
 .DS_Store
+
+# Abseil, fetched by the vendored SentencePiece CMake at configure time
+/third_party/sentencepiece/third_party/abseil-cpp/
+/third_party/sentencepiece/third_party/absl
+
+# ── Published measurements, once extracted by `./reproduce.sh results` ──────
+# The archive results/onpair_icde2027_measurements.tar.xz IS tracked.
+/results/pass*/
+/results/combined/
+/results/superseded/
+/results/logs/

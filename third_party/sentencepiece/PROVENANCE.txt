@@ -2,134 +2,86 @@ third_party/sentencepiece — PROVENANCE
 =======================================
 
 upstream_url:       https://github.com/google/sentencepiece
-upstream_tag:       v0.2.0
-upstream_head_sha:  17d7580d6407802f85855d2cc9190634e2c95624
-fetch_date:
-fetched_by:         git clone --depth=1 --branch v0.2.0 + rsync -a (exclusions below)
+upstream_tag:       v0.2.2
+upstream_head_sha:  e0cce7d37b065b5140349dbe12c6bcf6192fdd78
+fetched_by:         git clone --depth=1 --branch v0.2.2 + rsync -a (exclusions below)
 
 license:            Apache-2.0  (SPDX-Identifier: Apache-2.0; LICENSE at root)
 fairness_notes:     docs/benchmark/fairness/bpe.md
 
 scope
 -----
-Full vendored tree at tag v0.2.0, minus:
-  - .git/      (no in-tree git history)
-  - .github/   (CI workflow YAML not needed for our build)
-  - data/      (~37 MB of corpus samples used only by upstream CLI tests;
-                excluded to keep our tree small; not needed for libsentencepiece)
-  - python/    (Python bindings; from the measured path; not built)
-  - doc/       (Markdown documentation not consumed by our build)
+Full vendored tree at tag v0.2.2, unmodified, minus:
+  - .git/       (no in-tree git history)
+  - .github/    (CI workflow YAML not needed for our build)
+  - data/       (~42 MB of corpus samples and precompiled data used by upstream
+                 tests and by SPM_DISABLE_EMBEDDED_DATA builds; we build with
+                 the embedded data, so it is not needed)
+  - python/     (Python bindings; not on the measured path; not built)
+  - doc/        (Markdown documentation not consumed by our build)
+  - benchmark/  (upstream benchmark programs; SPM_ENABLE_BENCHMARK=OFF)
+  - contrib/    (optional NLCodec trainer; SPM_NLCODEC_BPE=OFF)
 
 NOT linked into bpe_runner:
-  - spm_train       CLI binary
-  - spm_encode      CLI binary
-  - spm_decode      CLI binary
-  - TensorFlow op   (SPM_ENABLE_TENSORFLOW_SHARED=OFF)
+  - spm_train / spm_encode / spm_decode CLI binaries
   - Python bindings (excluded at vendoring time)
-  - Unigram trainer subcommands (architecturally still compiled into
-    libsentencepiece since they share the trainer-spec scaffolding; not
-    invoked by our runner — runner call-site + CI grep audit on runners/bpe/)
+  - Unigram trainer subcommands (compiled into libsentencepiece because they
+    share the trainer-spec scaffolding; not invoked by our runner)
+
+build configuration (CMakeLists.txt at the repository root)
+-----------------------------------------------------------
+  SPM_ENABLE_SHARED=OFF, SPM_BUILD_TEST=OFF, SPM_ENABLE_TCMALLOC=OFF
+  SPM_PROTOBUF_PROVIDER="internal"   bundled protobuf-lite (below)
+  SPM_ABSL_PROVIDER="module"         Abseil fetched at configure time (below)
 
 bundled snapshots (in-tree; no git submodules)
--------------------------------------------------------------------
-Single PROVENANCE-per-upstream rule preserved — these are upstream-bundled
-slices that ship inside the SentencePiece source tarball at tag v0.2.0:
-
-  third_party/absl/
-    license:   Apache-2.0
-    contents:  absl::container, absl::flags, absl::strings slices used by
-               SentencePiece's CLI flag parsing + memory utilities.
-
+----------------------------------------------
   third_party/protobuf-lite/
-    license:   BSD-3-Clause-Google (Google 2008 BSD-style; "Copyright 2008
-               Google Inc. All rights reserved. Redistribution and use ...
-               permitted provided that the following conditions are met:
-               * Redistributions of source code must retain the above
-               copyright ..."). NOT Apache-2.0: protobuf-lite is BSD-3-Clause. Permissive.
-    contents:  Minimal protobuf-lite runtime used by SentencePiece's
-               ModelProto serialization. SPM_PROTOBUF_PROVIDER="internal"
-               (v0.2.0 option name) selects this bundled copy.
+    license:   BSD-3-Clause-Google (see third_party/protobuf-lite/LICENSE)
+    contents:  minimal protobuf-lite runtime used for ModelProto serialization
 
   third_party/darts_clone/
-    license:   BSD (2008-2011 Susumu Yata; standard BSD)
-    contents:  darts.h — Double-ARray Trie System header-only library used
-               by SentencePiece for vocabulary trie lookup. Plan §17 scope-
-               fence forbids PieceToId/IdToPiece invocation from runners/bpe/
-               (the only call-paths that materially exercise darts_clone in
-               the measured region).
+    license:   BSD-2-Clause (see third_party/darts_clone/LICENSE)
+    contents:  darts.h, the double-array trie used for vocabulary lookup
 
   third_party/esaxx/
-    license:   MIT-style (2010 Daisuke Okanohara; permissive)
-    contents:  esa.hxx + sais.hxx — Enhanced Suffix Array library used by
-               SentencePiece's BPE trainer for substring counting during
-               pair-merge iteration. THIS IS DIRECTLY ON THE PATH — esaxx's SA construction is the dominant cost of
-               SentencePieceTrainer::Train at large V × large N (and the
-               source of the . Confirmed to be a
-               headline dependency (not optional).
+    license:   MIT-style (see third_party/esaxx/LICENSE)
+    contents:  esa.hxx + sais.hxx, the enhanced suffix array library
 
-phase_4_bpe_adjusted_decision_1
--------------------------------
-The 1.x
-CMake option name `SPM_USE_BUILTIN_PROTOBUF=ON`. SentencePiece v0.2.0
-renamed this option to `SPM_PROTOBUF_PROVIDER="internal"` and added a new
-sibling option `SPM_ABSL_PROVIDER="internal"`. Behaviour identical (selects
-the bundled snapshots over a system installation). Our CMake shim uses the
-new option names. Recorded here per the Phase 4 "adjusted decision, not
-re-litigation" convention.
+fetched at configure time (NOT in-tree)
+---------------------------------------
+  abseil-cpp
+    upstream_url:   https://github.com/abseil/abseil-cpp
+    upstream_tag:   20260526.0  (pinned by SentencePiece's own CMakeLists.txt)
+    resolved_sha:   5650e9cf76d3be4318d5fa3af38ee483ddfd5e4a
+    license:        Apache-2.0
+    location:       third_party/sentencepiece/third_party/abseil-cpp/, plus a
+                    symlink third_party/sentencepiece/third_party/absl; both
+                    are created by SentencePiece's CMake and are git-ignored.
 
-protobuf_lite_license_note
---------------------------
-The file at third_party/protobuf-lite/LICENSE is BSD-3-Clause-Google
-("Copyright 2008 Google Inc. ... Redistribution and use in source and
-binary forms, with or without modification, are permitted ..."). Still
-permissive; net bpe_runner binary license unchanged (Apache-2.0 dominant
-in the static-link graph).
+byte round-trip (load-bearing for the BPE baseline design)
+----------------------------------------------------------
+The harness does not feed raw bytes to SentencePiece. It drives SentencePiece
+BPE through the GPT-2 byte<->unicode bijection (bytes_to_unicode + a
+256-codepoint coverage line + character_coverage=1.0), which round-trips
+arbitrary bytes (verified over 0x00..0xFF including lone 0x80/0xFF/NUL/newline
+by the exhaustive fuzzer in tests/bpe_roundtrip_test.cpp). minbpe
+(third_party/minbpe) serves as a secondary test-only round-trip cross-check.
+Configuration rationale: docs/benchmark/fairness/bpe.md.
 
-No Apple clang / libc++ portability patches were required. SentencePiece
-v0.2.0 builds clean on macOS Darwin 24 / Apple clang 17 / libc++ / C++17.
+reproducibility
+---------------
+Double-anchored: tag `v0.2.2` plus the explicit HEAD SHA recorded above. The
+per-file manifest is SHA256SUMS in this directory (every vendored file except
+this record and the manifest itself).
 
-byte_fallback_roundtrip_note (load-bearing for the BPE baseline design)
------------------------------------------------------------------------
-SentencePiece v0.2.0 with `byte_fallback=true` + `normalization=identity`
-does NOT round-trip lone high-bit non-UTF-8 bytes: an empirical probe
-against this vendored snapshot shows bytes 0xFF and 0x80 decoding as
-U+FFFD (UTF-8 `EF BF BD`):
-
-    Train: 200 sentences of 32 bytes each (high-bit content),
-           --vocab_size=512 --byte_fallback=true --normalization_rule_name=identity
-           --add_dummy_prefix=false --remove_extra_whitespaces=false
-           --character_coverage=1.0 --hard_vocab_limit=false
-           --unk_id=0 --bos_id=-1 --eos_id=-1 --pad_id=-1
-           --input_format=text --split_by_whitespace=false
-           --treat_whitespace_as_suffix=false
-           --allow_whitespace_only_pieces=true
-
-    Encode input bytes:  00 61 0a FF 62 80                       (N=6)
-    Encoded IDs:         1 401 486 385 465 385                   (FF and 80 both -> ID 385)
-    Decode output bytes: 00 61 0a EF BF BD 62 EF BF BD           (FF, 80 -> U+FFFD)
-
-For this reason the harness's `bpe` baseline does not feed raw bytes to
-SentencePiece. It drives SentencePiece BPE through the GPT-2 byte<->unicode
-bijection (bytes_to_unicode + a 256-codepoint coverage line +
-character_coverage=1.0), which round-trips arbitrary bytes (verified over
-0x00..0xFF including lone 0x80/0xFF/NUL/newline by the exhaustive fuzzer in
-tests/bpe_roundtrip_test.cpp). minbpe (third_party/minbpe) serves as a
-secondary test-only round-trip cross-check. Configuration rationale:
-docs/benchmark/fairness/bpe.md.
-
-reproducibility_caveat
-----------------------
-Double-anchored: tag `v0.2.0` plus the explicit HEAD SHA recorded above.
-No transitive submodules to track (all third_party/ contents are flat
-snapshots inside the SentencePiece tarball, not git submodules).
-
-bundled_snapshot_inventory_license_summary
-------------------------------------------
-SentencePiece v0.2.0  Apache-2.0
-absl                  Apache-2.0
+licence summary
+---------------
+SentencePiece v0.2.2  Apache-2.0
+abseil-cpp            Apache-2.0
 protobuf-lite         BSD-3-Clause-Google
 darts_clone           BSD-2-Clause
-esaxx                 MIT (style; verbatim wording in third_party/esaxx/LICENSE)
+esaxx                 MIT-style
 
-→ bpe_runner binary licence inheritance: Apache-2.0 dominant; permissive
-  bundled deps compatible (no copyleft escalation). See /LICENSING.
+-> bpe_runner binary licence inheritance: Apache-2.0 dominant; permissive
+   bundled deps compatible (no copyleft escalation). See /LICENSING.

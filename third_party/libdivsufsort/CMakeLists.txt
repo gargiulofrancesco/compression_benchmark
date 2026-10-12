@@ -1,4 +1,4 @@
-# Phase 4 RLZ Step 1 — onpair_bench thin CMake shim for libdivsufsort 2.0.1.
+# Thin CMake shim for libdivsufsort 2.0.1, used by the RLZ baseline.
 #
 # Upstream CMakeLists.txt is preserved as CMakeLists.txt.upstream (uses
 # cmake_minimum_required(VERSION 2.4) which modern CMake (3.27+/4.0+) rejects).
@@ -7,9 +7,9 @@
 # (those are the only outputs of upstream's configure-step that the .c files
 # depend on).
 #
-# 32-bit suffix-array variant only (BUILD_DIVSUFSORT64=OFF). R_len <= 4 GB is
-# sufficient for Phase 4 smoke + Phase 5 measurement; reference R never
-# exceeds 1 GB even at R%=25% on the largest planned column.
+# 32-bit suffix-array variant only (BUILD_DIVSUFSORT64=OFF): the RLZ runner
+# caps the reference at 2 GiB, far above the 5% references of the paper's
+# columns (at most 16 MiB).
 
 set(LIBDIVSUFSORT_SRCS
     lib/divsufsort.c
